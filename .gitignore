@@ -1,0 +1,96 @@
+# Camera Bridge .gitignore
+
+# Log files
+*.log
+logs/
+/var/log/camera-bridge/
+
+# Configuration files with sensitive data
+**/rclone.conf
+**/wpa_supplicant.conf
+**/.env
+**/secrets.*
+
+# Temporary files
+*.tmp
+*.temp
+/tmp/
+temp/
+
+# Backup files
+*.backup
+*.bak
+*~
+*.swp
+*.swo
+
+# System files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Runtime files
+*.pid
+*.sock
+/var/run/camera-bridge.pid
+
+# Build artifacts
+*.deb
+*.rpm
+*.tar.gz
+*.zip
+
+# Test files
+test_*.txt
+test_*.jpg
+test_*.png
+
+# IDE files
+.vscode/
+.idea/
+*.sublime-*
+
+# OS generated files
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+
+# Project specific
+PROJECT_INFO
+/srv/samba/camera-share/*
+!/srv/samba/camera-share/.gitkeep
+
+# USB installer files
+*.img
+*.iso
+
+# Documentation build files
+docs/_build/
+docs/site/
+
+# Node modules (if any web dependencies added later)
+node_modules/
+package-lock.json
+
+# Python cache (if any Python scripts added later)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Local development files
+local_config.*
+dev_*.sh
+*.local
+
+# Certificate files
+*.crt
+*.key
+*.pem
+*.p12
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
