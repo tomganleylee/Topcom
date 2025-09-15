@@ -293,26 +293,14 @@ EOF
 log "Configuring sudoers..."
 cat > /etc/sudoers.d/camera-bridge << 'EOF'
 # Camera Bridge sudoers configuration
-www-data ALL=(ALL) NOPASSWD: /bin/cp /tmp/wpa_supplicant.conf /etc/wpa_supplicant/wpa_supplicant.conf
-www-data ALL=(ALL) NOPASSWD: /bin/cp /tmp/rclone.conf /home/camerabridge/.config/rclone/rclone.conf
-www-data ALL=(ALL) NOPASSWD: /bin/chown camerabridge:camerabridge /home/camerabridge/.config/rclone/rclone.conf
+www-data ALL=(ALL) NOPASSWD: /bin/cp
+www-data ALL=(ALL) NOPASSWD: /bin/chown
 www-data ALL=(ALL) NOPASSWD: /usr/sbin/iwlist
 www-data ALL=(ALL) NOPASSWD: /opt/camera-bridge/scripts/*
-www-data ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart wpa_supplicant
-www-data ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart dhcpcd
-www-data ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart hostapd
-www-data ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart dnsmasq
-www-data ALL=(ALL) NOPASSWD: /usr/bin/systemctl start hostapd
-www-data ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop hostapd
-www-data ALL=(ALL) NOPASSWD: /usr/bin/systemctl start dnsmasq
-www-data ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop dnsmasq
+www-data ALL=(ALL) NOPASSWD: /usr/bin/systemctl
 camerabridge ALL=(ALL) NOPASSWD: /opt/camera-bridge/scripts/*
-camerabridge ALL=(ALL) NOPASSWD: /usr/bin/systemctl * camera-bridge
-camerabridge ALL=(ALL) NOPASSWD: /usr/bin/systemctl * smbd
-camerabridge ALL=(ALL) NOPASSWD: /usr/bin/systemctl * nmbd
-camerabridge ALL=(ALL) NOPASSWD: /usr/bin/systemctl * wpa_supplicant
-camerabridge ALL=(ALL) NOPASSWD: /usr/bin/systemctl * hostapd
-camerabridge ALL=(ALL) NOPASSWD: /usr/bin/systemctl * dnsmasq
+camerabridge ALL=(ALL) NOPASSWD: /usr/bin/systemctl
+camerabridge ALL=(ALL) NOPASSWD: /usr/local/bin/*
 EOF
 
 # Pi Zero 2 W performance optimizations
