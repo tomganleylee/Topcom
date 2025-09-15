@@ -49,6 +49,13 @@ PROJECT_ROOT="$(dirname "$(dirname "$(dirname "$SCRIPT_DIR")")")"
 log "Project root: $PROJECT_ROOT"
 log "Installing for Pi Zero 2 W with USB gadget support"
 
+# Check if this is an auto-installation
+AUTO_INSTALL=false
+if [ -f /boot/auto-install-camera-bridge.txt ]; then
+    log "Auto-installation mode detected"
+    AUTO_INSTALL=true
+fi
+
 # Check system requirements
 log "Checking system requirements..."
 
