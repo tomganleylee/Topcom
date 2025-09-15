@@ -91,9 +91,98 @@ mkdir -p /opt/camera-bridge/{scripts,web,config}
 mkdir -p /srv/samba/camera-share
 mkdir -p /var/log/camera-bridge
 
+# Detect if this is an update or fresh installation
+EXISTING_INSTALLATION=false
+if [ -d "/opt/camera-bridge" ] && [ -f "/opt/camera-bridge/scripts/camera-bridge-service.sh" ]; then
+    EXISTING_INSTALLATION=true
+    log "Existing Camera Bridge installation detected - updating files..."
+else
+    log "Fresh installation - copying Camera Bridge files..."
+fi
+
+# Get the script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Smart file copying with update detection
+update_scripts() {
+    log "Updating scripts..."
+
+    # Check for newer files and copy them
+    for script_file in "$PROJECT_DIR"/scripts/*.sh; do
+        script_name=$(basename "$script_file")
+        target_file="/opt/camera-bridge/scripts/$script_name"
+
+        if [ ! -f "$target_file" ] || [ "$script_file" -nt "$target_file" ]; then
+            log "  → Updating $script_name"
+            cp "$script_file" "$target_file"
+        fi
+    done
+
+    chmod +x /opt/camera-bridge/scripts/*.sh
+}
+
+update_web_files() {
+    log "Updating web interface..."
+
+    # Check for newer web files and copy them
+    for web_file in "$PROJECT_DIR"/web/*.php; do
+        web_name=$(basename "$web_file")
+        target_file="/opt/camera-bridge/web/$web_name"
+
+        if [ ! -f "$target_file" ] || [ "$web_file" -nt "$target_file" ]; then
+            log "  → Updating $web_name"
+            cp "$web_file" "$target_file"
+        fi
+    done
+}
+
+update_config_files() {
+    log "Updating configuration templates..."
+
+    if [ -d "$PROJECT_DIR/config" ]; then
+        for config_file in "$PROJECT_DIR"/config/*; do
+            if [ -f "$config_file" ]; then
+                config_name=$(basename "$config_file")
+                target_file="/opt/camera-bridge/config/$config_name"
+
+                # Only update config templates if they don't exist (preserve user configs)
+                if [ ! -f "$target_file" ]; then
+                    log "  → Adding new config template: $config_name"
+                    cp "$config_file" "$target_file"
+                fi
+            fi
+        done
+    fi
+}
+
+# Execute file updates
+if [ "$EXISTING_INSTALLATION" = true ]; then
+    log "Performing smart update of existing installation..."
+    update_scripts
+    update_web_files
+    update_config_files
+    log "✓ Files updated successfully"
+else
+    log "Performing fresh installation file copy..."
+    # Copy scripts
+    cp "$PROJECT_DIR"/scripts/*.sh /opt/camera-bridge/scripts/
+    chmod +x /opt/camera-bridge/scripts/*.sh
+
+    # Copy web interface
+    cp "$PROJECT_DIR"/web/*.php /opt/camera-bridge/web/
+
+    # Copy configuration templates
+    if [ -d "$PROJECT_DIR/config" ]; then
+        cp "$PROJECT_DIR"/config/* /opt/camera-bridge/config/ 2>/dev/null || true
+    fi
+    log "✓ Files copied successfully"
+fi
+
 # Set ownership
 chown -R camerabridge:camerabridge /srv/samba/camera-share
 chown -R camerabridge:camerabridge /var/log/camera-bridge
+chown -R www-data:www-data /opt/camera-bridge/web
 
 log "Setting up nginx PHP configuration..."
 # Enable PHP-FPM
@@ -246,9 +335,35 @@ else
     log "✗ Autostart script not found: $SCRIPT_DIR/camera-bridge-autostart.sh"
 fi
 
-log "Installation completed successfully!"
-echo ""
-echo "=========================================="
+# Install terminal UI scripts
+log "Installing terminal UI scripts..."
+if [ -f "$SCRIPT_DIR/terminal-ui.sh" ]; then
+    cp "$SCRIPT_DIR/terminal-ui.sh" /usr/local/bin/camera-bridge-ui
+    chmod +x /usr/local/bin/camera-bridge-ui
+    log "✓ Terminal UI script installed"
+fi
+
+if [ -f "$SCRIPT_DIR/terminal-ui-enhanced.sh" ]; then
+    cp "$SCRIPT_DIR/terminal-ui-enhanced.sh" /usr/local/bin/terminal-ui-enhanced
+    chmod +x /usr/local/bin/terminal-ui-enhanced
+    log "✓ Enhanced terminal UI script installed"
+fi
+
+if [ "$EXISTING_INSTALLATION" = true ]; then
+    log "Camera Bridge update completed successfully!"
+    echo ""
+    echo "=========================================="
+    echo "📦 UPDATE SUMMARY"
+    echo "=========================================="
+    echo "✓ Scripts and web files updated"
+    echo "✓ Enhanced QR code token entry available"
+    echo "✓ Improved WiFi management"
+    echo "✓ User configurations preserved"
+else
+    log "Installation completed successfully!"
+    echo ""
+    echo "=========================================="
+fi
 echo "📷 CAMERA BRIDGE INSTALLATION COMPLETE"
 echo "=========================================="
 echo ""

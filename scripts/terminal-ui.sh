@@ -15,8 +15,8 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 # Temporary files for dialog operations
-TEMP_DIR="/tmp/camera-bridge-ui"
-mkdir -p "$TEMP_DIR"
+TEMP_DIR="/tmp/camera-bridge-ui-$$"
+mkdir -p "$TEMP_DIR" 2>/dev/null || TEMP_DIR="/tmp"
 
 # Cleanup function
 cleanup() {
@@ -122,7 +122,7 @@ wifi_menu() {
             5) start_hotspot ;;
             6) stop_hotspot ;;
             7) monitor_wifi ;;
-            8) reset_wifi ;;
+            8) reset_wifi_settings ;;
             9) advanced_wifi_menu ;;
             10) return ;;
             *) ;;
@@ -131,20 +131,81 @@ wifi_menu() {
 }
 
 show_wifi_status() {
-    local status_info
+    dialog --title "Checking..." --infobox "Getting WiFi status..." 5 40
+
+    # Find WiFi manager script
+    local wifi_script=""
     if [ -x "/opt/camera-bridge/scripts/wifi-manager.sh" ]; then
-        status_info=$(sudo /opt/camera-bridge/scripts/wifi-manager.sh status 2>&1)
+        wifi_script="/opt/camera-bridge/scripts/wifi-manager.sh"
     elif [ -x "$HOME/camera-bridge/scripts/wifi-manager.sh" ]; then
-        status_info=$(sudo $HOME/camera-bridge/scripts/wifi-manager.sh status 2>&1)
-    else
-        status_info="WiFi manager script not found"
+        wifi_script="$HOME/camera-bridge/scripts/wifi-manager.sh"
     fi
 
-    dialog --title "WiFi Status" --msgbox "$status_info" 15 60
+    local status_info=""
+    if [ -n "$wifi_script" ]; then
+        # Get comprehensive WiFi status
+        status_info=$(sudo "$wifi_script" status 2>/dev/null)
+
+        # If basic status fails, get network info instead
+        if [ $? -ne 0 ] || [ -z "$status_info" ]; then
+            status_info=$(sudo "$wifi_script" info 2>/dev/null)
+        fi
+
+        # Add additional system information
+        local interface_status=""
+        if command -v iwconfig >/dev/null 2>&1; then
+            local wifi_iface=$(ip link show | grep -E "wl|wlan" | awk -F': ' '{print $2}' | awk '{print $1}' | head -1)
+            if [ -n "$wifi_iface" ]; then
+                interface_status=$(iwconfig "$wifi_iface" 2>/dev/null | grep -E "(ESSID|Frequency|Access Point|Bit Rate|Signal level)" | head -5)
+            fi
+        fi
+
+        # Get hotspot status
+        local hotspot_status="Stopped"
+        if systemctl is-active --quiet hostapd 2>/dev/null; then
+            hotspot_status="Running (CameraBridge-Setup)"
+        fi
+
+        # Format comprehensive status
+        if [ -n "$status_info" ]; then
+            status_info="$status_info
+
+Interface Details:
+$interface_status
+
+Setup Hotspot: $hotspot_status
+
+Commands Available:
+• Press 'R' to refresh
+• Press 'C' to connect to network
+• Press 'S' to start hotspot"
+        else
+            status_info="Unable to get WiFi status.
+
+Basic Information:
+• Interface: $(ip link show | grep -E "wl|wlan" | awk -F': ' '{print $2}' | awk '{print $1}' | head -1 || echo "Not detected")
+• Setup Hotspot: $hotspot_status
+• Check that WiFi hardware is available
+
+Try using 'Scan Networks' to test connectivity."
+        fi
+    else
+        status_info="ERROR: WiFi manager script not found!
+
+Expected locations:
+• /opt/camera-bridge/scripts/wifi-manager.sh
+• $HOME/camera-bridge/scripts/wifi-manager.sh
+
+Please ensure the Camera Bridge is properly installed."
+    fi
+
+    # Show status with options
+    dialog --title "WiFi Status" --msgbox "$status_info" 20 80
 }
 
 scan_and_connect() {
-    dialog --title "Scanning..." --infobox "Scanning for WiFi networks..." 5 40
+    # Show scanning progress
+    dialog --title "Scanning..." --infobox "Scanning for WiFi networks...\nThis may take 10-15 seconds." 6 50
 
     # Find WiFi manager script
     local wifi_script=""
@@ -155,95 +216,257 @@ scan_and_connect() {
     fi
 
     if [ -z "$wifi_script" ]; then
-        dialog --title "Error" --msgbox "WiFi manager script not found" 8 40
+        dialog --title "Error" --msgbox "WiFi manager script not found\n\nExpected locations:\n• /opt/camera-bridge/scripts/wifi-manager.sh\n• $HOME/camera-bridge/scripts/wifi-manager.sh" 10 60
         return
     fi
 
-    # Scan for networks
-    local networks
-    networks=$(sudo "$wifi_script" scan 2>/dev/null)
+    # Scan for networks with retry logic
+    local networks=""
+    local scan_attempts=0
+    local max_attempts=2
+
+    while [ $scan_attempts -lt $max_attempts ] && [ -z "$networks" ]; do
+        scan_attempts=$((scan_attempts + 1))
+
+        if [ $scan_attempts -gt 1 ]; then
+            dialog --title "Retrying..." --infobox "Scan attempt $scan_attempts of $max_attempts..." 5 50
+        fi
+
+        networks=$(sudo "$wifi_script" scan 2>/dev/null | grep -v "^$" | head -20)
+
+        if [ -z "$networks" ]; then
+            sleep 2
+        fi
+    done
 
     if [ -z "$networks" ]; then
-        dialog --title "No Networks" --msgbox "No WiFi networks found." 8 40
+        dialog --title "No Networks Found" --msgbox "No WiFi networks detected.\n\nPossible causes:\n• WiFi adapter not available\n• No networks in range\n• Permission issues\n\nTry:\n• Check WiFi Status for hardware info\n• Move closer to access points\n• Use Manual Connection for hidden networks" 12 60
         return
     fi
 
-    # Create menu options
+    # Create enhanced menu with network details
     local menu_options=""
+    local networks_array=()
     local i=1
+
     while IFS= read -r network; do
         if [ -n "$network" ] && [ "$network" != "Not connected" ]; then
+            # Clean up network name and truncate if too long
+            local clean_network=$(echo "$network" | sed 's/[^a-zA-Z0-9_-]//g' | cut -c1-30)
+            if [ ${#network} -gt 30 ]; then
+                clean_network="${clean_network}..."
+            fi
+
             menu_options="$menu_options $i \"$network\""
+            networks_array[$i]="$network"
             i=$((i+1))
         fi
     done <<< "$networks"
 
     if [ -z "$menu_options" ]; then
-        dialog --title "No Networks" --msgbox "No valid WiFi networks found." 8 40
+        dialog --title "No Valid Networks" --msgbox "No valid WiFi networks found in scan results." 8 50
         return
     fi
 
-    # Show network selection
-    eval "dialog --title 'Available Networks' --menu 'Select a network:' $DIALOG_HEIGHT $DIALOG_WIDTH 10 $menu_options" 2>"$TEMP_DIR/network_choice"
+    # Show network selection with enhanced dialog
+    eval "dialog --title 'Available Networks ($((i-1)) found)' --menu 'Select a network to connect:' $DIALOG_HEIGHT $DIALOG_WIDTH 10 $menu_options" 2>"$TEMP_DIR/network_choice"
 
     if [ $? -eq 0 ]; then
         choice=$(cat "$TEMP_DIR/network_choice")
-        selected_network=$(echo "$networks" | sed -n "${choice}p")
+        selected_network="${networks_array[$choice]}"
 
-        # Get password
-        dialog --title "WiFi Password" --passwordbox "Enter password for $selected_network:" 10 50 2>"$TEMP_DIR/wifi_password"
+        if [ -n "$selected_network" ]; then
+            # Ask for connection type
+            dialog --title "Connection Type" --menu "How do you want to connect to:\n$selected_network" 12 60 3 \
+                1 "WPA/WPA2 with password" \
+                2 "Open network (no password)" \
+                3 "Cancel" 2>"$TEMP_DIR/connect_type"
 
-        if [ $? -eq 0 ]; then
-            password=$(cat "$TEMP_DIR/wifi_password")
+            if [ $? -eq 0 ]; then
+                connect_type=$(cat "$TEMP_DIR/connect_type")
+                case $connect_type in
+                    1)
+                        # Get password with confirmation
+                        dialog --title "WiFi Password" --passwordbox "Enter password for:\n$selected_network\n\n(Leave empty for no password)" 10 60 2>"$TEMP_DIR/wifi_password"
 
-            dialog --title "Connecting..." --infobox "Connecting to $selected_network..." 5 50
+                        if [ $? -eq 0 ]; then
+                            password=$(cat "$TEMP_DIR/wifi_password")
 
-            if sudo "$wifi_script" connect "$selected_network" "$password" >/dev/null 2>&1; then
-                dialog --title "Success" --msgbox "Connected to $selected_network successfully!" 8 50
-            else
-                dialog --title "Error" --msgbox "Failed to connect to $selected_network\n\nCheck password and try again." 10 50
+                            # Show connection progress
+                            dialog --title "Connecting..." --infobox "Connecting to $selected_network...\n\nThis may take up to 30 seconds.\nPlease wait..." 7 60
+
+                            # Attempt connection with timeout
+                            if timeout 45 sudo "$wifi_script" connect "$selected_network" "$password" >/dev/null 2>&1; then
+                                # Verify connection
+                                sleep 3
+                                if current_ssid=$(iwgetid -r 2>/dev/null) && [ "$current_ssid" = "$selected_network" ]; then
+                                    local wifi_iface=$(ip link show | grep -E "wl|wlan" | awk -F': ' '{print $2}' | awk '{print $1}' | head -1)
+                                    local ip_addr=$(ip addr show "$wifi_iface" 2>/dev/null | grep "inet " | awk '{print $2}' | cut -d/ -f1 | head -1)
+                                    dialog --title "Connection Successful" --msgbox "✓ Connected to: $selected_network\n\nIP Address: ${ip_addr:-Getting IP...}\n\nInternet connectivity will be available shortly." 10 60
+                                else
+                                    dialog --title "Connection Issues" --msgbox "Connection attempt completed but verification failed.\n\nNetwork: $selected_network\n\nTry:\n• Check WiFi Status\n• Verify password\n• Try Manual Connection" 12 60
+                                fi
+                            else
+                                dialog --title "Connection Failed" --msgbox "Failed to connect to: $selected_network\n\nPossible causes:\n• Incorrect password\n• Network out of range\n• Authentication issues\n\nSuggestions:\n• Verify password is correct\n• Try moving closer to router\n• Check if network supports your device" 14 60
+                            fi
+                        fi
+                        ;;
+                    2)
+                        # Open network
+                        dialog --title "Connecting..." --infobox "Connecting to open network:\n$selected_network..." 6 50
+
+                        if timeout 30 sudo "$wifi_script" connect "$selected_network" "" >/dev/null 2>&1; then
+                            dialog --title "Success" --msgbox "Connected to open network:\n$selected_network" 8 50
+                        else
+                            dialog --title "Failed" --msgbox "Failed to connect to open network:\n$selected_network" 8 50
+                        fi
+                        ;;
+                    3)
+                        return
+                        ;;
+                esac
             fi
         fi
     fi
 
-    rm -f "$TEMP_DIR/wifi_password"
+    # Cleanup temporary files
+    rm -f "$TEMP_DIR/wifi_password" "$TEMP_DIR/network_choice" "$TEMP_DIR/connect_type"
 }
 
 manual_connect() {
-    dialog --title "Manual WiFi Connection" --inputbox "Enter SSID:" 10 50 2>"$TEMP_DIR/manual_ssid"
+    # Network type selection
+    dialog --title "Manual WiFi Connection" --menu "Select connection type:" 12 60 4 \
+        1 "Standard WPA/WPA2 Network" \
+        2 "Open Network (No Password)" \
+        3 "Hidden Network (WPA/WPA2)" \
+        4 "Cancel" 2>"$TEMP_DIR/manual_type"
 
-    if [ $? -eq 0 ]; then
-        ssid=$(cat "$TEMP_DIR/manual_ssid")
-        if [ -n "$ssid" ]; then
-            dialog --title "WiFi Password" --passwordbox "Enter password for $ssid:" 10 50 2>"$TEMP_DIR/manual_password"
+    if [ $? -ne 0 ]; then
+        return
+    fi
 
-            if [ $? -eq 0 ]; then
-                password=$(cat "$TEMP_DIR/manual_password")
+    manual_type=$(cat "$TEMP_DIR/manual_type")
+    case $manual_type in
+        4)
+            return
+            ;;
+        *)
+            ;;
+    esac
 
-                dialog --title "Connecting..." --infobox "Connecting to $ssid..." 5 50
+    # Get SSID
+    local ssid_prompt="Enter network SSID (name):"
+    if [ "$manual_type" = "3" ]; then
+        ssid_prompt="Enter hidden network SSID (exact name):"
+    fi
 
-                # Find WiFi manager script
-                local wifi_script=""
-                if [ -x "/opt/camera-bridge/scripts/wifi-manager.sh" ]; then
-                    wifi_script="/opt/camera-bridge/scripts/wifi-manager.sh"
-                elif [ -x "$HOME/camera-bridge/scripts/wifi-manager.sh" ]; then
-                    wifi_script="$HOME/camera-bridge/scripts/wifi-manager.sh"
-                fi
+    dialog --title "Network SSID" --inputbox "$ssid_prompt" 10 60 2>"$TEMP_DIR/manual_ssid"
 
-                if [ -n "$wifi_script" ]; then
-                    if sudo "$wifi_script" connect "$ssid" "$password" >/dev/null 2>&1; then
-                        dialog --title "Success" --msgbox "Connected to $ssid successfully!" 8 50
-                    else
-                        dialog --title "Error" --msgbox "Failed to connect to $ssid" 8 50
-                    fi
-                else
-                    dialog --title "Error" --msgbox "WiFi manager script not found" 8 40
-                fi
-            fi
+    if [ $? -ne 0 ] || [ ! -s "$TEMP_DIR/manual_ssid" ]; then
+        rm -f "$TEMP_DIR/manual_ssid" "$TEMP_DIR/manual_type"
+        return
+    fi
+
+    ssid=$(cat "$TEMP_DIR/manual_ssid")
+
+    # Validate SSID
+    if [ -z "$ssid" ] || [ ${#ssid} -gt 32 ]; then
+        dialog --title "Invalid SSID" --msgbox "SSID cannot be empty or longer than 32 characters.\n\nEntered: '$ssid'" 8 60
+        rm -f "$TEMP_DIR/manual_ssid" "$TEMP_DIR/manual_type"
+        return
+    fi
+
+    # Get password if needed
+    local password=""
+    if [ "$manual_type" != "2" ]; then
+        dialog --title "Network Password" --passwordbox "Enter password for '$ssid':\n\n(Leave empty if no password)" 10 60 2>"$TEMP_DIR/manual_password"
+
+        if [ $? -ne 0 ]; then
+            rm -f "$TEMP_DIR/manual_ssid" "$TEMP_DIR/manual_type"
+            return
+        fi
+
+        password=$(cat "$TEMP_DIR/manual_password")
+
+        # Validate password length for WPA
+        if [ -n "$password" ] && [ ${#password} -lt 8 ]; then
+            dialog --title "Invalid Password" --msgbox "WPA/WPA2 passwords must be at least 8 characters long.\n\nCurrent length: ${#password} characters" 8 60
+            rm -f "$TEMP_DIR/manual_ssid" "$TEMP_DIR/manual_password" "$TEMP_DIR/manual_type"
+            return
         fi
     fi
 
-    rm -f "$TEMP_DIR/manual_ssid" "$TEMP_DIR/manual_password"
+    # Show connection summary
+    local connection_summary="Connection Details:
+• SSID: $ssid
+• Type: $(case $manual_type in 1) Standard WPA/WPA2;; 2) Open Network;; 3) Hidden WPA/WPA2;; esac)
+• Password: $([ -n "$password" ] && echo "Provided" || echo "None")
+
+Proceed with connection?"
+
+    if ! dialog --title "Confirm Connection" --yesno "$connection_summary" 12 60; then
+        rm -f "$TEMP_DIR/manual_ssid" "$TEMP_DIR/manual_password" "$TEMP_DIR/manual_type"
+        return
+    fi
+
+    # Find WiFi manager script
+    local wifi_script=""
+    if [ -x "/opt/camera-bridge/scripts/wifi-manager.sh" ]; then
+        wifi_script="/opt/camera-bridge/scripts/wifi-manager.sh"
+    elif [ -x "$HOME/camera-bridge/scripts/wifi-manager.sh" ]; then
+        wifi_script="$HOME/camera-bridge/scripts/wifi-manager.sh"
+    fi
+
+    if [ -z "$wifi_script" ]; then
+        dialog --title "Error" --msgbox "WiFi manager script not found\n\nExpected locations:\n• /opt/camera-bridge/scripts/wifi-manager.sh\n• $HOME/camera-bridge/scripts/wifi-manager.sh" 10 60
+        rm -f "$TEMP_DIR/manual_ssid" "$TEMP_DIR/manual_password" "$TEMP_DIR/manual_type"
+        return
+    fi
+
+    # Show connection progress
+    dialog --title "Connecting..." --infobox "Connecting to '$ssid'...\n\nThis may take up to 45 seconds.\nPlease wait..." 7 60
+
+    # Attempt connection with extended timeout for manual connections
+    local connection_result=0
+    if timeout 60 sudo "$wifi_script" connect "$ssid" "$password" >/dev/null 2>&1; then
+        # Extended verification for manual connections
+        sleep 5
+
+        local verification_attempts=0
+        local max_verification_attempts=6
+        local connected=false
+
+        while [ $verification_attempts -lt $max_verification_attempts ] && [ "$connected" = "false" ]; do
+            if current_ssid=$(iwgetid -r 2>/dev/null) && [ "$current_ssid" = "$ssid" ]; then
+                connected=true
+                break
+            fi
+            sleep 2
+            verification_attempts=$((verification_attempts + 1))
+        done
+
+        if [ "$connected" = "true" ]; then
+            local wifi_iface=$(ip link show | grep -E "wl|wlan" | awk -F': ' '{print $2}' | awk '{print $1}' | head -1)
+            local ip_addr=$(ip addr show "$wifi_iface" 2>/dev/null | grep "inet " | awk '{print $2}' | cut -d/ -f1 | head -1)
+            local signal_level=$(iwconfig "$wifi_iface" 2>/dev/null | grep "Signal level" | sed 's/.*Signal level=\([^ ]*\).*/\1/' | head -1)
+
+            dialog --title "Connection Successful" --msgbox "✓ Successfully connected to: $ssid\n\nConnection Details:\n• IP Address: ${ip_addr:-Obtaining...}\n• Signal Strength: ${signal_level:-Unknown}\n• Type: $(case $manual_type in 1) Standard WPA/WPA2;; 2) Open Network;; 3) Hidden WPA/WPA2;; esac)\n\nInternet connectivity should be available." 14 70
+        else
+            dialog --title "Connection Issues" --msgbox "Connection attempt completed but verification failed.\n\nNetwork: $ssid\n\nThis might indicate:\n• Weak signal strength\n• Network authentication issues\n• DHCP assignment delays\n\nTry:\n• Check WiFi Status in a few moments\n• Verify network credentials\n• Move closer to the access point" 16 70
+        fi
+    else
+        case "$manual_type" in
+            1|3)
+                dialog --title "Connection Failed" --msgbox "Failed to connect to: $ssid\n\nPossible causes:\n• Incorrect password\n• Network not in range\n• Authentication method not supported\n• Network capacity full\n\nSuggestions:\n• Verify SSID spelling is exact\n• Check password (case-sensitive)\n• Try moving closer to router\n• Contact network administrator" 16 70
+                ;;
+            2)
+                dialog --title "Connection Failed" --msgbox "Failed to connect to open network: $ssid\n\nPossible causes:\n• Network not in range\n• Network requires web authentication\n• Network blocks new devices\n• SSID misspelled\n\nSuggestions:\n• Verify SSID spelling\n• Check if captive portal exists\n• Try scanning for the network first" 14 70
+                ;;
+        esac
+    fi
+
+    # Cleanup temporary files
+    rm -f "$TEMP_DIR/manual_ssid" "$TEMP_DIR/manual_password" "$TEMP_DIR/manual_type"
 }
 
 start_hotspot() {
@@ -315,6 +538,33 @@ monitor_wifi() {
     read -n 1
 }
 
+reset_wifi_settings() {
+    if dialog --title "Reset WiFi Settings" --yesno "This will:\n\n• Disconnect from current WiFi network\n• Clear all saved network configurations\n• Stop any running hotspot\n• Reset WiFi interface to defaults\n\nThis action cannot be undone.\n\nAre you sure you want to continue?" 14 60; then
+
+        dialog --title "Resetting..." --infobox "Resetting WiFi settings...\nThis may take a moment." 6 50
+
+        # Find WiFi manager script
+        local wifi_script=""
+        if [ -x "/opt/camera-bridge/scripts/wifi-manager.sh" ]; then
+            wifi_script="/opt/camera-bridge/scripts/wifi-manager.sh"
+        elif [ -x "$HOME/camera-bridge/scripts/wifi-manager.sh" ]; then
+            wifi_script="$HOME/camera-bridge/scripts/wifi-manager.sh"
+        fi
+
+        if [ -n "$wifi_script" ]; then
+            # Use the reset function from wifi-manager
+            if sudo "$wifi_script" reset >/dev/null 2>&1; then
+                sleep 2
+                dialog --title "Reset Complete" --msgbox "WiFi settings have been reset successfully.\n\n• All network configurations cleared\n• WiFi interface reset\n• Ready for new configuration\n\nYou can now:\n• Scan for networks\n• Use manual connection\n• Start setup hotspot" 12 60
+            else
+                dialog --title "Reset Failed" --msgbox "Failed to reset WiFi settings.\n\nTry:\n• Check that you have proper permissions\n• Ensure WiFi hardware is available\n• Use advanced WiFi tools for manual reset" 10 60
+            fi
+        else
+            dialog --title "Error" --msgbox "WiFi manager script not found.\n\nCannot perform reset without the script." 8 50
+        fi
+    fi
+}
+
 # Dropbox configuration menu
 dropbox_menu() {
     while true; do
@@ -352,45 +602,325 @@ dropbox_menu() {
 }
 
 configure_dropbox() {
-    dialog --title "Dropbox Setup" --msgbox "To configure Dropbox:\n\n1. Visit dropbox.com/developers/apps\n2. Create new app (App folder access)\n3. Generate access token\n4. Enter token in next screen\n\nNote: The token will be stored securely for the camerabridge user." 15 70
+    # Show detailed setup instructions
+    dialog --title "Dropbox Setup Instructions" --msgbox "STEP-BY-STEP DROPBOX SETUP:\n\n1. Open https://dropbox.com/developers/apps in your browser\n2. Click 'Create app'\n3. Choose 'Scoped access'\n4. Choose 'App folder' (recommended) or 'Full Dropbox'\n5. Name your app (e.g., 'CameraBridge')\n6. Click 'Create app'\n7. In app settings, go to 'Permissions' tab\n8. Enable: files.metadata.read, files.content.read, files.content.write\n9. Go to 'Settings' tab\n10. Generate access token\n11. Copy the long token string\n\nPress OK when you have your token ready." 18 80
 
-    dialog --title "Dropbox Token" --inputbox "Enter your Dropbox access token:" 10 70 2>"$TEMP_DIR/dropbox_token"
+    # Configuration method selection
+    dialog --title "Configuration Method" --menu "How would you like to configure Dropbox?" 14 70 4 \
+        1 "Enter Access Token Manually" \
+        2 "QR Code + Web Entry (Recommended)" \
+        3 "Reconfigure Existing Setup" \
+        4 "Cancel" 2>"$TEMP_DIR/config_method"
 
-    if [ $? -eq 0 ]; then
-        token=$(cat "$TEMP_DIR/dropbox_token")
-        if [ -n "$token" ]; then
-            # Create rclone config
-            sudo -u camerabridge mkdir -p /home/camerabridge/.config/rclone 2>/dev/null || sudo mkdir -p /home/camerabridge/.config/rclone
+    if [ $? -ne 0 ]; then
+        return
+    fi
 
-            cat > "$TEMP_DIR/rclone.conf" << EOF
+    config_method=$(cat "$TEMP_DIR/config_method")
+    case $config_method in
+        4)
+            return
+            ;;
+        3)
+            if dialog --title "Reconfigure Warning" --yesno "This will replace your existing Dropbox configuration.\n\nAll current settings will be lost.\n\nContinue?" 10 60; then
+                # Continue to manual token entry
+                configure_dropbox_manual
+            else
+                return
+            fi
+            ;;
+        2)
+            # QR Code + Web Entry
+            configure_dropbox_qr
+            ;;
+        1)
+            # Manual token entry
+            configure_dropbox_manual
+            ;;
+    esac
+
+    # Cleanup
+    rm -f "$TEMP_DIR/config_method"
+}
+
+configure_dropbox_manual() {
+    # Token input with validation
+    local token=""
+    local attempt=0
+    local max_attempts=3
+
+    while [ $attempt -lt $max_attempts ]; do
+        attempt=$((attempt + 1))
+
+        if [ $attempt -gt 1 ]; then
+            dialog --title "Token Input (Attempt $attempt/$max_attempts)" --inputbox "Previous token was invalid.\n\nPlease enter your Dropbox access token:\n\n• Should start with 'sl.' for scoped tokens\n• Must be 84+ characters long\n• No spaces or line breaks" 12 70 2>"$TEMP_DIR/dropbox_token"
+        else
+            dialog --title "Dropbox Access Token" --inputbox "Enter your Dropbox access token:\n\n• Starts with 'sl.' for new scoped tokens\n• Should be 84+ characters long\n• Copy exactly as shown in Dropbox app console\n• No spaces or line breaks\n\nToken:" 12 70 2>"$TEMP_DIR/dropbox_token"
+        fi
+
+        if [ $? -ne 0 ]; then
+            rm -f "$TEMP_DIR/dropbox_token"
+            return
+        fi
+
+        token=$(cat "$TEMP_DIR/dropbox_token" | tr -d ' \t\n\r')
+
+        # Validate token format
+        if [ -z "$token" ]; then
+            dialog --title "Empty Token" --msgbox "Token cannot be empty.\n\nPlease try again." 8 40
+            continue
+        fi
+
+        if [ ${#token} -lt 40 ]; then
+            dialog --title "Token Too Short" --msgbox "Token appears too short (${#token} characters).\n\nDropbox tokens should be at least 40 characters.\n\nPlease verify you copied the complete token." 10 60
+            continue
+        fi
+
+        if echo "$token" | grep -q '[[:space:]]'; then
+            dialog --title "Invalid Characters" --msgbox "Token contains spaces or newlines.\n\nPlease ensure you copy only the token string." 8 50
+            continue
+        fi
+
+        # Token seems valid, break out of loop
+        break
+    done
+
+    if [ $attempt -ge $max_attempts ]; then
+        dialog --title "Setup Failed" --msgbox "Maximum attempts reached.\n\nPlease check your token and try again later." 8 50
+        rm -f "$TEMP_DIR/dropbox_token"
+        return
+    fi
+
+    # Configure with the token
+    configure_dropbox_with_token "$token"
+    rm -f "$TEMP_DIR/dropbox_token"
+}
+
+configure_dropbox_qr() {
+    # Check if qrencode is available
+    if ! command -v qrencode >/dev/null 2>&1; then
+        dialog --title "Installing QR Code Support..." --infobox "Installing qrencode package...\nThis may take a moment." 6 50
+
+        if ! sudo apt update >/dev/null 2>&1 || ! sudo apt install -y qrencode >/dev/null 2>&1; then
+            dialog --title "Installation Failed" --msgbox "Failed to install QR code support.\n\nPlease install manually:\nsudo apt install qrencode\n\nFalling back to manual token entry." 10 60
+            configure_dropbox_manual
+            return
+        fi
+    fi
+
+    # Get system IP address
+    local system_ip=$(ip addr show | grep "inet " | grep -v "127.0.0.1" | awk '{print $2}' | cut -d/ -f1 | head -1)
+
+    if [ -z "$system_ip" ]; then
+        dialog --title "Network Error" --msgbox "Could not determine system IP address.\n\nEnsure you're connected to WiFi or use manual token entry." 10 60
+        configure_dropbox_manual
+        return
+    fi
+
+    # Check if nginx is running and start if needed
+    if ! systemctl is-active --quiet nginx; then
+        dialog --title "Starting Web Server..." --infobox "Starting web server for QR code entry..." 5 50
+        sudo systemctl start nginx 2>/dev/null || true
+        sleep 2
+    fi
+
+    # Create QR code URL
+    local qr_url="http://${system_ip}/token-entry.php?qr=1"
+
+    # Generate QR code
+    local qr_code=""
+    if qr_code=$(qrencode -t ANSIUTF8 "$qr_url" 2>/dev/null); then
+        # Show QR code with instructions
+        local qr_message="📱 DROPBOX TOKEN ENTRY VIA QR CODE
+
+IMPORTANT: Your phone/device must be connected to the same WiFi network!
+
+$qr_code
+
+Or visit manually: $qr_url
+
+Instructions:
+1. Get your Dropbox token ready (from developers.dropbox.com)
+2. Scan QR code above with your phone camera
+3. Paste the token in the web form
+4. Press Save Token
+5. Return here and press OK to continue
+
+Press OK when you've submitted the token..."
+
+        dialog --title "QR Code Token Entry" --msgbox "$qr_message" 30 90
+    else
+        # Fallback if QR generation fails
+        dialog --title "QR Code Generation Failed" --msgbox "Could not generate QR code.\n\nVisit this URL instead:\n$qr_url\n\nOr use manual token entry." 12 70
+        configure_dropbox_manual
+        return
+    fi
+
+    # Wait for token file and process it
+    dialog --title "Waiting for Token..." --infobox "Waiting for token submission via web interface...\n\nPress Ctrl+C to cancel and use manual entry." 7 60
+
+    local token_file="/tmp/camera-bridge-token-entry.txt"
+    local status_file="/tmp/camera-bridge-token-status.txt"
+    local wait_count=0
+    local max_wait=120  # 2 minutes
+
+    # Clean up any old files
+    sudo rm -f "$token_file" "$status_file" 2>/dev/null
+
+    while [ $wait_count -lt $max_wait ]; do
+        if [ -f "$status_file" ] && [ "$(cat "$status_file" 2>/dev/null)" = "success" ]; then
+            # Token was submitted successfully
+            if [ -f "$token_file" ]; then
+                local submitted_token=$(cat "$token_file" | tr -d ' \t\n\r')
+
+                if [ -n "$submitted_token" ] && [ ${#submitted_token} -ge 40 ]; then
+                    dialog --title "Token Received" --msgbox "✅ Token received successfully via QR code!\n\nLength: ${#submitted_token} characters\n\nProcessing configuration..." 10 60
+
+                    # Configure with the submitted token
+                    configure_dropbox_with_token "$submitted_token"
+
+                    # Cleanup
+                    sudo rm -f "$token_file" "$status_file" 2>/dev/null
+                    return
+                else
+                    dialog --title "Invalid Token" --msgbox "Received token appears invalid.\n\nLength: ${#submitted_token} characters\n\nTrying manual entry instead." 10 60
+                    sudo rm -f "$token_file" "$status_file" 2>/dev/null
+                    configure_dropbox_manual
+                    return
+                fi
+            fi
+        fi
+
+        sleep 1
+        wait_count=$((wait_count + 1))
+    done
+
+    # Timeout - offer manual entry
+    dialog --title "Timeout" --msgbox "No token was submitted within 2 minutes.\n\nWould you like to try manual entry instead?" 10 60
+    configure_dropbox_manual
+
+    # Cleanup
+    sudo rm -f "$token_file" "$status_file" 2>/dev/null
+}
+
+configure_dropbox_with_token() {
+    local token="$1"
+
+    # Show progress
+    dialog --title "Configuring..." --infobox "Setting up Dropbox configuration...\nThis may take a moment." 6 50
+
+    # Create user and directories if needed
+    if ! id "camerabridge" >/dev/null 2>&1; then
+        dialog --title "Creating User..." --infobox "Creating camerabridge user..." 5 40
+        sudo useradd -r -s /bin/false -d /home/camerabridge camerabridge 2>/dev/null || true
+    fi
+
+    # Create rclone config directory
+    sudo mkdir -p /home/camerabridge/.config/rclone 2>/dev/null
+
+    # Create rclone configuration
+    cat > "$TEMP_DIR/rclone.conf" << EOF
 [dropbox]
 type = dropbox
 token = {"access_token":"$token","token_type":"bearer","expiry":"0001-01-01T00:00:00Z"}
 EOF
 
-            sudo cp "$TEMP_DIR/rclone.conf" /home/camerabridge/.config/rclone/rclone.conf
-            sudo chown camerabridge:camerabridge /home/camerabridge/.config/rclone/rclone.conf 2>/dev/null || true
-            sudo chmod 600 /home/camerabridge/.config/rclone/rclone.conf
+    # Install configuration
+    sudo cp "$TEMP_DIR/rclone.conf" /home/camerabridge/.config/rclone/rclone.conf
+    sudo chown -R camerabridge:camerabridge /home/camerabridge/.config 2>/dev/null || true
+    sudo chmod 700 /home/camerabridge/.config/rclone
+    sudo chmod 600 /home/camerabridge/.config/rclone/rclone.conf
 
-            # Test connection
-            if sudo -u camerabridge rclone lsd dropbox: >/dev/null 2>&1; then
-                dialog --title "Success" --msgbox "Dropbox configured successfully!\n\nThe camera bridge will now sync photos to your Dropbox automatically." 10 50
-            else
-                dialog --title "Error" --msgbox "Failed to connect to Dropbox.\n\nPlease check your token and try again." 10 60
-            fi
+    # Test connection
+    dialog --title "Testing Connection..." --infobox "Testing Dropbox connection...\nThis may take 10-30 seconds." 6 50
+
+    if timeout 45 sudo -u camerabridge rclone lsd dropbox: >/dev/null 2>&1; then
+        # Get account info for confirmation
+        local account_info=""
+        if account_info=$(timeout 30 sudo -u camerabridge rclone about dropbox: 2>/dev/null | head -3); then
+            dialog --title "Configuration Successful" --msgbox "✓ Dropbox configured successfully!\n\nConnection Details:\n$account_info\n\nThe Camera Bridge will now automatically sync photos to:\ndropbox:Camera-Photos/\n\nYou can test sync using 'Manual Sync Now'." 16 70
+        else
+            dialog --title "Configuration Successful" --msgbox "✓ Dropbox configured successfully!\n\n• Connection verified\n• Authentication working\n• Ready for photo sync\n\nPhotos will sync to: dropbox:Camera-Photos/\n\nYou can test sync using 'Manual Sync Now'." 14 60
+        fi
+    else
+        dialog --title "Configuration Failed" --msgbox "✗ Failed to connect to Dropbox.\n\nPossible issues:\n• Invalid or expired token\n• Network connectivity problems\n• Dropbox API rate limiting\n• Token permissions insufficient\n\nSuggestions:\n• Verify token is copied correctly\n• Check internet connection\n• Ensure app has proper permissions\n• Try again in a few minutes" 16 70
+
+        # Offer to keep config for retry
+        if dialog --title "Keep Configuration?" --yesno "Do you want to keep the configuration for retry later?\n\nChoose 'Yes' to keep settings\nChoose 'No' to remove configuration" 10 60; then
+            dialog --title "Configuration Saved" --msgbox "Configuration saved for later testing.\n\nUse 'Test Dropbox Connection' to verify later." 8 50
+        else
+            sudo rm -f /home/camerabridge/.config/rclone/rclone.conf
+            dialog --title "Configuration Removed" --msgbox "Dropbox configuration has been removed." 8 40
         fi
     fi
 
-    rm -f "$TEMP_DIR/dropbox_token" "$TEMP_DIR/rclone.conf"
+    # Cleanup
+    rm -f "$TEMP_DIR/rclone.conf"
 }
 
 test_dropbox() {
-    dialog --title "Testing..." --infobox "Testing Dropbox connection..." 5 40
+    dialog --title "Testing Connection..." --infobox "Testing Dropbox connection...\nThis may take up to 30 seconds." 6 50
 
-    if sudo -u camerabridge rclone lsd dropbox: >/dev/null 2>&1; then
-        dialog --title "Test Result" --msgbox "Dropbox connection: OK ✓\n\nYour Dropbox is properly configured and accessible." 8 40
+    # Check if rclone is installed
+    if ! command -v rclone >/dev/null 2>&1; then
+        dialog --title "Test Failed" --msgbox "✗ rclone is not installed\n\nPlease install rclone first:\nsudo apt install rclone" 10 50
+        return
+    fi
+
+    # Check if config exists
+    if [ ! -f "/home/camerabridge/.config/rclone/rclone.conf" ]; then
+        dialog --title "Test Failed" --msgbox "✗ No Dropbox configuration found\n\nPlease configure Dropbox first using:\n'Configure Dropbox Token'" 10 50
+        return
+    fi
+
+    # Test basic connectivity
+    local test_output=""
+    local connection_result=0
+
+    if test_output=$(timeout 45 sudo -u camerabridge rclone lsd dropbox: 2>&1); then
+        # Connection successful, get detailed info
+        local account_info=""
+        local space_info=""
+        local test_folder=""
+
+        # Get account information
+        if account_info=$(timeout 30 sudo -u camerabridge rclone about dropbox: 2>/dev/null); then
+            space_info=$(echo "$account_info" | grep -E "(Total|Used|Free)" | head -3)
+        fi
+
+        # Test write permissions by creating a test folder
+        local test_result="Write permissions: "
+        if timeout 30 sudo -u camerabridge rclone mkdir dropbox:Camera-Photos-Test 2>/dev/null && \
+           timeout 30 sudo -u camerabridge rclone rmdir dropbox:Camera-Photos-Test 2>/dev/null; then
+            test_result="${test_result}OK ✓"
+        else
+            test_result="${test_result}Limited ⚠"
+        fi
+
+        # Show success dialog with details
+        local success_msg="✓ Dropbox Connection: SUCCESSFUL\n\n"
+        if [ -n "$space_info" ]; then
+            success_msg="${success_msg}Storage Information:\n$space_info\n\n"
+        fi
+        success_msg="${success_msg}$test_result\n\nYour Camera Bridge can now sync photos to Dropbox!"
+
+        dialog --title "Connection Test Results" --msgbox "$success_msg" 16 70
     else
-        dialog --title "Test Result" --msgbox "Dropbox connection: FAILED ✗\n\nPlease check your configuration and internet connection." 10 50
+        # Connection failed, provide detailed diagnosis
+        local error_msg="✗ Dropbox Connection: FAILED\n\n"
+
+        # Analyze the error
+        if echo "$test_output" | grep -qi "unauthorized\|invalid.*token\|token.*expired"; then
+            error_msg="${error_msg}Issue: Authentication Failed\n• Token may be invalid or expired\n• App permissions may be insufficient\n\nSolution:\n• Regenerate token in Dropbox app console\n• Ensure all required permissions are enabled\n• Reconfigure using 'Configure Dropbox Token'"
+        elif echo "$test_output" | grep -qi "network\|connection\|timeout"; then
+            error_msg="${error_msg}Issue: Network Connectivity\n• Cannot reach Dropbox servers\n• Internet connection may be down\n\nSolution:\n• Check internet connection\n• Try again in a few minutes\n• Check firewall settings"
+        elif echo "$test_output" | grep -qi "rate.*limit\|too.*many.*requests"; then
+            error_msg="${error_msg}Issue: Rate Limiting\n• Too many requests to Dropbox API\n\nSolution:\n• Wait 10-15 minutes and try again\n• Dropbox API has request limits"
+        else
+            error_msg="${error_msg}Issue: Unknown Error\n\nError details:\n$(echo "$test_output" | head -3)\n\nSolution:\n• Check configuration\n• Try reconfiguring Dropbox token\n• Verify internet connection"
+        fi
+
+        dialog --title "Connection Test Results" --msgbox "$error_msg" 18 70
     fi
 }
 
@@ -429,6 +959,201 @@ manual_sync() {
     read -n 1
 }
 
+view_sync_logs() {
+    dialog --title "Sync Log Viewer" --menu "Select log to view:" 15 60 6 \
+        1 "Recent Sync Activity (last 50 lines)" \
+        2 "Camera Bridge Service Log" \
+        3 "Today's Sync Events" \
+        4 "Error Logs Only" \
+        5 "Full Sync History" \
+        6 "Back to Dropbox Menu" 2>"$TEMP_DIR/log_choice"
+
+    if [ $? -ne 0 ]; then
+        return
+    fi
+
+    choice=$(cat "$TEMP_DIR/log_choice")
+    case $choice in
+        1)
+            # Recent sync activity
+            local recent_logs=""
+            if [ -f "/var/log/camera-bridge/service.log" ]; then
+                recent_logs=$(tail -50 /var/log/camera-bridge/service.log | grep -E "(sync|dropbox|rclone)" -i || echo "No recent sync activity found")
+            else
+                recent_logs="Service log file not found at /var/log/camera-bridge/service.log"
+            fi
+            echo "$recent_logs" > "$TEMP_DIR/recent_sync.log"
+            dialog --title "Recent Sync Activity" --textbox "$TEMP_DIR/recent_sync.log" 20 90
+            ;;
+        2)
+            # Full service log
+            if [ -f "/var/log/camera-bridge/service.log" ]; then
+                dialog --title "Camera Bridge Service Log" --textbox /var/log/camera-bridge/service.log 22 90
+            else
+                dialog --title "Log Not Found" --msgbox "Service log not found at:\n/var/log/camera-bridge/service.log\n\nThe service may not be running or logging is not configured." 10 60
+            fi
+            ;;
+        3)
+            # Today's events
+            local today_logs=""
+            local today_date=$(date '+%Y-%m-%d')
+            if [ -f "/var/log/camera-bridge/service.log" ]; then
+                today_logs=$(grep "$today_date" /var/log/camera-bridge/service.log | grep -E "(sync|dropbox)" -i || echo "No sync events found for today ($today_date)")
+            else
+                today_logs="Service log file not found"
+            fi
+            echo "$today_logs" > "$TEMP_DIR/today_sync.log"
+            dialog --title "Today's Sync Events ($today_date)" --textbox "$TEMP_DIR/today_sync.log" 20 90
+            ;;
+        4)
+            # Error logs only
+            local error_logs=""
+            if [ -f "/var/log/camera-bridge/service.log" ]; then
+                error_logs=$(grep -E "(ERROR|FAILED|failed|error)" /var/log/camera-bridge/service.log | tail -50 || echo "No errors found in recent logs")
+            else
+                error_logs="Service log file not found"
+            fi
+            echo "$error_logs" > "$TEMP_DIR/error_sync.log"
+            dialog --title "Error Logs" --textbox "$TEMP_DIR/error_sync.log" 20 90
+            ;;
+        5)
+            # Full history (systemd journal)
+            journalctl -u camera-bridge --no-pager > "$TEMP_DIR/full_history.log" 2>/dev/null || echo "Unable to retrieve systemd journal logs" > "$TEMP_DIR/full_history.log"
+            dialog --title "Full Sync History (systemd journal)" --textbox "$TEMP_DIR/full_history.log" 22 90
+            ;;
+        6)
+            return
+            ;;
+    esac
+
+    # Cleanup and return to log menu
+    rm -f "$TEMP_DIR/recent_sync.log" "$TEMP_DIR/today_sync.log" "$TEMP_DIR/error_sync.log" "$TEMP_DIR/full_history.log"
+    view_sync_logs
+}
+
+dropbox_settings() {
+    while true; do
+        # Get current settings info
+        local config_status="Not configured"
+        local config_path="/home/camerabridge/.config/rclone/rclone.conf"
+        local sync_folder="Camera-Photos"
+
+        if [ -f "$config_path" ]; then
+            config_status="Configured"
+        fi
+
+        dialog --title "Dropbox Settings" --menu "Current Status: $config_status\nSync Folder: dropbox:$sync_folder\n\nChoose an option:" 15 70 8 \
+            1 "View Current Configuration" \
+            2 "Change Sync Folder Name" \
+            3 "Reset Configuration" \
+            4 "Export Configuration Backup" \
+            5 "Import Configuration Backup" \
+            6 "Advanced rclone Settings" \
+            7 "Remove Dropbox Setup" \
+            8 "Back to Dropbox Menu" 2>"$TEMP_DIR/settings_choice"
+
+        if [ $? -ne 0 ]; then
+            return
+        fi
+
+        choice=$(cat "$TEMP_DIR/settings_choice")
+        case $choice in
+            1)
+                # View current config
+                if [ -f "$config_path" ]; then
+                    local config_info="CURRENT DROPBOX CONFIGURATION\n===============================\n\n"
+                    config_info="${config_info}Config File: $config_path\n"
+                    config_info="${config_info}User: camerabridge\n"
+                    config_info="${config_info}Permissions: $(ls -la $config_path 2>/dev/null | awk '{print $1}' || echo 'Unknown')\n\n"
+
+                    if sudo -u camerabridge rclone config show dropbox 2>/dev/null | grep -q "type = dropbox"; then
+                        config_info="${config_info}Status: Valid configuration found\n"
+                        config_info="${config_info}Type: Dropbox\n\n"
+
+                        # Test connection status
+                        if timeout 15 sudo -u camerabridge rclone lsd dropbox: >/dev/null 2>&1; then
+                            config_info="${config_info}Connection: ✓ Active\n"
+                        else
+                            config_info="${config_info}Connection: ✗ Failed\n"
+                        fi
+                    else
+                        config_info="${config_info}Status: Configuration file exists but invalid format\n"
+                    fi
+
+                    dialog --title "Configuration Details" --msgbox "$config_info" 18 70
+                else
+                    dialog --title "No Configuration" --msgbox "No Dropbox configuration found.\n\nUse 'Configure Dropbox Token' to set up Dropbox sync." 8 50
+                fi
+                ;;
+            2)
+                # Change sync folder
+                dialog --title "Change Sync Folder" --inputbox "Enter new folder name for Dropbox sync:\n\nCurrent: Camera-Photos\nNew folder will be: dropbox:[your-input]\n\nFolder name:" 12 60 "Camera-Photos" 2>"$TEMP_DIR/new_folder"
+
+                if [ $? -eq 0 ]; then
+                    new_folder=$(cat "$TEMP_DIR/new_folder" | tr -d '/' | tr ' ' '-')
+                    if [ -n "$new_folder" ]; then
+                        dialog --title "Folder Change" --msgbox "Note: This setting is not yet implemented.\n\nFor now, photos sync to: dropbox:Camera-Photos\n\nTo change the folder, you would need to modify the camera bridge service configuration." 12 60
+                    fi
+                fi
+                rm -f "$TEMP_DIR/new_folder"
+                ;;
+            3)
+                # Reset configuration
+                if dialog --title "Reset Configuration" --yesno "This will completely remove your Dropbox configuration.\n\nYou will need to:\n• Get a new access token\n• Reconfigure from scratch\n\nAre you sure?" 12 60; then
+                    sudo rm -f "$config_path" 2>/dev/null
+                    dialog --title "Configuration Reset" --msgbox "Dropbox configuration has been reset.\n\nUse 'Configure Dropbox Token' to set up again." 8 50
+                fi
+                ;;
+            4)
+                # Export backup
+                if [ -f "$config_path" ]; then
+                    local backup_file="/tmp/dropbox-config-backup-$(date +%Y%m%d_%H%M%S).conf"
+                    if sudo cp "$config_path" "$backup_file" 2>/dev/null && sudo chmod 644 "$backup_file"; then
+                        dialog --title "Backup Created" --msgbox "Configuration backed up to:\n$backup_file\n\nYou can copy this file to restore the configuration later." 10 60
+                    else
+                        dialog --title "Backup Failed" --msgbox "Failed to create backup.\n\nCheck permissions and disk space." 8 50
+                    fi
+                else
+                    dialog --title "No Configuration" --msgbox "No configuration to backup.\n\nConfigure Dropbox first." 8 40
+                fi
+                ;;
+            5)
+                # Import backup
+                dialog --title "Import Backup" --inputbox "Enter full path to backup file:" 10 60 "/tmp/" 2>"$TEMP_DIR/backup_path"
+                if [ $? -eq 0 ]; then
+                    backup_path=$(cat "$TEMP_DIR/backup_path")
+                    if [ -f "$backup_path" ]; then
+                        if dialog --title "Confirm Import" --yesno "This will replace your current configuration.\n\nImport from: $backup_path\n\nContinue?" 10 60; then
+                            sudo cp "$backup_path" "$config_path" 2>/dev/null && \
+                            sudo chown camerabridge:camerabridge "$config_path" 2>/dev/null && \
+                            sudo chmod 600 "$config_path"
+                            dialog --title "Import Complete" --msgbox "Configuration imported successfully.\n\nUse 'Test Dropbox Connection' to verify." 8 50
+                        fi
+                    else
+                        dialog --title "File Not Found" --msgbox "Backup file not found:\n$backup_path" 8 50
+                    fi
+                fi
+                rm -f "$TEMP_DIR/backup_path"
+                ;;
+            6)
+                # Advanced settings
+                dialog --title "Advanced Settings" --msgbox "ADVANCED RCLONE SETTINGS\n\nFor advanced configuration, you can:\n\n1. Edit config directly:\n   sudo nano /home/camerabridge/.config/rclone/rclone.conf\n\n2. Use rclone config:\n   sudo -u camerabridge rclone config\n\n3. View all options:\n   rclone config help dropbox\n\nWarning: Advanced changes may break sync functionality." 16 80
+                ;;
+            7)
+                # Remove setup
+                if dialog --title "Remove Dropbox Setup" --yesno "This will:\n• Remove all Dropbox configuration\n• Stop automatic syncing\n• Keep existing photos in Dropbox\n\nRemove Dropbox setup?" 12 60; then
+                    sudo rm -rf /home/camerabridge/.config/rclone 2>/dev/null
+                    dialog --title "Dropbox Removed" --msgbox "Dropbox setup has been completely removed.\n\nAutomatic syncing is now disabled.\nExisting photos in Dropbox are unaffected." 10 60
+                    return
+                fi
+                ;;
+            8)
+                return
+                ;;
+        esac
+    done
+}
+
 # System status
 system_status() {
     # Gather system information
@@ -461,6 +1186,17 @@ system_status() {
         fi
     fi
 
+    # SMB/Share information
+    local smb_info=""
+    if [ "$smb_status" = "Running" ]; then
+        smb_info="• SMB Share: //$(ip addr show | grep "inet " | grep -v "127.0.0.1" | awk '{print $2}' | cut -d/ -f1 | head -1)/photos
+• SMB User: camera
+• SMB Password: camera123
+• Share Path: /srv/samba/camera-share"
+    else
+        smb_info="• SMB Server: Not running"
+    fi
+
     local status_info="SYSTEM STATUS
 ================
 
@@ -477,6 +1213,9 @@ Services:
 Network:
 • ${wifi_status}
 • $(ip addr show | grep "inet " | grep -v "127.0.0.1" | awk '{print "IP: " $2}' | head -1)
+
+SMB File Sharing:
+$smb_info
 
 Recent Activity:
 • $(find /srv/samba/camera-share -type f -mtime -1 2>/dev/null | wc -l) files added today
@@ -751,6 +1490,118 @@ manage_camera_bridge_service() {
     esac
 
     manage_camera_bridge_service
+}
+
+manage_smb_service() {
+    local smb_status="Unknown"
+    if systemctl is-active --quiet smbd 2>/dev/null; then
+        smb_status="Running"
+    else
+        smb_status="Stopped"
+    fi
+
+    local nmb_status="Unknown"
+    if systemctl is-active --quiet nmbd 2>/dev/null; then
+        nmb_status="Running"
+    else
+        nmb_status="Stopped"
+    fi
+
+    dialog --title "SMB/Samba Service ($smb_status)" --menu "SMB Status: $smb_status | NetBIOS: $nmb_status\n\nChoose action:" $DIALOG_HEIGHT $DIALOG_WIDTH 10 \
+        1 "Start SMB Services" \
+        2 "Stop SMB Services" \
+        3 "Restart SMB Services" \
+        4 "View SMB Status" \
+        5 "Show SMB Connection Info" \
+        6 "View SMB Logs" \
+        7 "Test SMB Share" \
+        8 "Reset SMB Password" \
+        9 "Back" 2>"$TEMP_DIR/smb_choice"
+
+    if [ $? -ne 0 ]; then
+        return
+    fi
+
+    choice=$(cat "$TEMP_DIR/smb_choice")
+    case $choice in
+        1)
+            dialog --title "Starting Services..." --infobox "Starting SMB/Samba services..." 5 40
+            sudo systemctl start smbd nmbd 2>/dev/null
+            sleep 2
+            if systemctl is-active --quiet smbd && systemctl is-active --quiet nmbd; then
+                dialog --title "Success" --msgbox "SMB services started successfully." 8 40
+            else
+                dialog --title "Warning" --msgbox "SMB services may not have started correctly.\nCheck service status for details." 8 50
+            fi
+            ;;
+        2)
+            dialog --title "Stopping Services..." --infobox "Stopping SMB/Samba services..." 5 40
+            sudo systemctl stop smbd nmbd 2>/dev/null
+            sleep 2
+            dialog --title "Services Stopped" --msgbox "SMB services have been stopped." 8 40
+            ;;
+        3)
+            dialog --title "Restarting Services..." --infobox "Restarting SMB/Samba services..." 5 40
+            sudo systemctl restart smbd nmbd 2>/dev/null
+            sleep 3
+            dialog --title "Services Restarted" --msgbox "SMB services have been restarted." 8 40
+            ;;
+        4)
+            local detailed_status="SMB SERVICE STATUS\n==================\n\n"
+            detailed_status="${detailed_status}SMB Daemon (smbd):\n$(systemctl status smbd --no-pager -l 2>/dev/null | head -8)\n\n"
+            detailed_status="${detailed_status}NetBIOS Daemon (nmbd):\n$(systemctl status nmbd --no-pager -l 2>/dev/null | head -8)"
+            dialog --title "SMB Service Status" --msgbox "$detailed_status" 20 90
+            ;;
+        5)
+            local server_ip=$(ip addr show | grep "inet " | grep -v "127.0.0.1" | awk '{print $2}' | cut -d/ -f1 | head -1)
+            local connection_info="SMB CONNECTION INFORMATION\n==========================\n\n"
+            connection_info="${connection_info}Server IP: $server_ip\n"
+            connection_info="${connection_info}Share Name: photos\n"
+            connection_info="${connection_info}Share Path: \\\\\\\\$server_ip\\\\photos\n\n"
+            connection_info="${connection_info}Authentication:\n"
+            connection_info="${connection_info}• Username: camera\n"
+            connection_info="${connection_info}• Password: camera123\n\n"
+            connection_info="${connection_info}Connection Examples:\n"
+            connection_info="${connection_info}• Windows: \\\\\\\\$server_ip\\\\photos\n"
+            connection_info="${connection_info}• macOS: smb://$server_ip/photos\n"
+            connection_info="${connection_info}• Linux: smb://$server_ip/photos"
+            dialog --title "SMB Connection Info" --msgbox "$connection_info" 18 70
+            ;;
+        6)
+            if [ -f "/var/log/samba/log.smbd" ]; then
+                dialog --title "SMB Logs" --textbox /var/log/samba/log.smbd 22 90
+            else
+                dialog --title "No Logs" --msgbox "SMB log file not found at /var/log/samba/log.smbd" 8 50
+            fi
+            ;;
+        7)
+            dialog --title "Testing..." --infobox "Testing SMB share accessibility..." 5 50
+            if smbclient -L localhost -U camera%camera123 >/dev/null 2>&1; then
+                dialog --title "Test Success" --msgbox "✓ SMB share is accessible\n\nThe 'photos' share can be accessed with:\n• Username: camera\n• Password: camera123" 10 50
+            else
+                dialog --title "Test Failed" --msgbox "✗ SMB share test failed\n\nPossible issues:\n• SMB services not running\n• Authentication problems\n• Network configuration issues" 10 60
+            fi
+            ;;
+        8)
+            dialog --title "Reset SMB Password" --passwordbox "Enter new password for SMB user 'camera':" 10 50 2>"$TEMP_DIR/new_smb_password"
+            if [ $? -eq 0 ]; then
+                new_password=$(cat "$TEMP_DIR/new_smb_password")
+                if [ -n "$new_password" ]; then
+                    if echo -e "$new_password\\n$new_password" | sudo smbpasswd -a -s camera 2>/dev/null; then
+                        dialog --title "Password Updated" --msgbox "SMB password for user 'camera' has been updated successfully." 8 50
+                    else
+                        dialog --title "Update Failed" --msgbox "Failed to update SMB password.\nCheck system logs for details." 8 50
+                    fi
+                fi
+            fi
+            rm -f "$TEMP_DIR/new_smb_password"
+            ;;
+        9)
+            return
+            ;;
+    esac
+
+    manage_smb_service
 }
 
 # System information
@@ -1056,9 +1907,9 @@ show_wifi_interface_details() {
     local wifi_details="WIFI INTERFACE DETAILS
 ======================
 
-$(iwconfig wlan0 2>/dev/null || echo "Interface not available")
+$(local wifi_iface=$(ip link show | grep -E "wl|wlan" | awk -F': ' '{print $2}' | awk '{print $1}' | head -1); iwconfig "$wifi_iface" 2>/dev/null || echo "Interface not available")
 
-$(ip addr show wlan0 2>/dev/null || echo "No IP information available")
+$(local wifi_iface=$(ip link show | grep -E "wl|wlan" | awk -F': ' '{print $2}' | awk '{print $1}' | head -1); ip addr show "$wifi_iface" 2>/dev/null || echo "No IP information available")
 
 Driver Information:
 $(lspci | grep -i wireless || echo "No wireless adapter found in PCI")

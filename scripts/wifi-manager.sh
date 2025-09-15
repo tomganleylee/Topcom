@@ -3,8 +3,11 @@
 # WiFi Management Script for Camera Bridge
 # Handles WiFi connections, access point mode, and network management
 
-# Configuration
-WIFI_INTERFACE="wlan0"
+# Configuration - Auto-detect WiFi interface
+WIFI_INTERFACE=$(ip link show | grep -E '^\s*[0-9]+:\s*(wl|wlan)' | head -1 | awk -F': ' '{print $2}' | awk '{print $1}')
+if [ -z "$WIFI_INTERFACE" ]; then
+    WIFI_INTERFACE="wlan0"  # fallback
+fi
 AP_SSID="CameraBridge-Setup"
 AP_PASSWORD="setup123"
 CONFIG_FILE="/etc/wpa_supplicant/wpa_supplicant.conf"
