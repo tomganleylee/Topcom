@@ -99,8 +99,7 @@ apt install -y \
     unzip \
     python3 \
     python3-pip \
-    usbutils \
-    libcomposite-tools
+    usbutils
 
 # Install rclone
 log "Installing rclone..."
