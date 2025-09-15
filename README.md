@@ -5,8 +5,10 @@ A complete solution for automatically syncing camera photos to cloud storage via
 ## 🎯 Features
 
 - **Automatic Photo Sync**: Real-time sync of photos from cameras to Dropbox
+- **QR Code Setup**: Mobile-friendly Dropbox token entry via QR code + web interface
 - **SMB Network Share**: Professional-grade file sharing for camera connectivity
 - **USB Gadget Mode**: Pi Zero 2 W acts as smart USB drive for direct camera connection
+- **Smart Installation**: Auto-detecting installer that preserves configurations
 - **Web Interface**: Easy setup and monitoring via web browser
 - **Terminal Interface**: Advanced management and troubleshooting tools
 - **WiFi Management**: Flexible network configuration with hotspot fallback
@@ -105,7 +107,8 @@ camera-bridge/
 │   └── terminal-ui.sh       # Terminal interface
 ├── web/                     # Web interface
 │   ├── index.php           # Setup wizard
-│   └── status.php          # Status dashboard
+│   ├── status.php          # Status dashboard
+│   └── token-entry.php     # QR code token entry
 ├── config/                  # Configuration files
 │   ├── smb.conf            # Samba configuration
 │   ├── camera-bridge.service  # Systemd service
@@ -138,8 +141,14 @@ Configure network connectivity:
 ### 3. Dropbox Setup
 1. Visit [Dropbox Developers](https://dropbox.com/developers/apps)
 2. Create new app → Scoped access → App folder
-3. Generate access token
-4. Enter token via web interface
+3. Enable permissions: `files.metadata.read`, `files.content.read`, `files.content.write`
+4. Generate access token (1400+ characters, starts with 'sl.')
+
+**Token Entry Options:**
+- **QR Code + Web (Recommended)**: Terminal shows QR code → scan with phone → paste token on mobile browser
+- **Manual Entry**: Paste token directly in terminal dialog
+- **Web Interface**: Enter token via setup wizard at device IP
+
 5. Photos sync to `/Apps/CameraBridge/` folder
 
 ### 4. Camera Configuration
