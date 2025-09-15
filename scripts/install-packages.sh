@@ -184,7 +184,18 @@ EOF
 
 log "Enabling services..."
 systemctl enable nginx
-systemctl enable samba
+
+# Enable Samba/SMB service (different names on different systems)
+if systemctl list-unit-files | grep -q "^smbd.service"; then
+    systemctl enable smbd
+    log "Enabled smbd.service"
+elif systemctl list-unit-files | grep -q "^samba.service.*enabled"; then
+    systemctl enable samba
+    log "Enabled samba.service"
+else
+    log "WARNING: Could not find Samba service to enable"
+fi
+
 systemctl disable hostapd  # Will be managed by scripts
 systemctl disable dnsmasq  # Will be managed by scripts
 
