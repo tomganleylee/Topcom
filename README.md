@@ -19,7 +19,30 @@ A complete solution for automatically syncing camera photos to cloud storage via
 
 ## 🚀 Quick Start
 
-### Option 1: Pi Zero 2 W USB Gadget Mode (NEW!)
+### Option 1: Standard Raspberry Pi Setup (RECOMMENDED FOR TESTING)
+**Complete setup for Pi 4, Pi 3B+, or any Linux system:**
+
+```bash
+# 1. Clone repository
+git clone https://github.com/tomganleylee/Topcon.git camera-bridge
+cd camera-bridge
+
+# 2. Install Camera Bridge
+sudo ./scripts/install-packages.sh
+
+# 3. Setup remote access (IMPORTANT for deployment)
+setup-remote-access
+
+# 4. Configure via terminal UI
+sudo /opt/camera-bridge/scripts/terminal-ui.sh
+# → WiFi Status & Management
+# → Dropbox Configuration (use QR code option!)
+
+# 5. Test web interface
+# Open browser: http://[pi-ip-address]/
+```
+
+### Option 2: Pi Zero 2 W USB Gadget Mode (ADVANCED)
 Transform your Pi Zero 2 W into a smart USB drive:
 ```bash
 cd raspberry-pi/pi-zero-2w
@@ -29,7 +52,7 @@ sudo ./scripts/install-pi-zero-2w.sh
 ```
 See [pi-zero-2w/QUICK-START.md](raspberry-pi/pi-zero-2w/QUICK-START.md)
 
-### Option 2: Raspberry Pi USB Installer
+### Option 3: Raspberry Pi USB Installer
 1. Create USB installer: `sudo ./raspberry-pi/scripts/create-usb-installer.sh /dev/sdX`
 2. Insert USB into Raspberry Pi
 3. Run: `sudo ./quick-setup.sh`
@@ -151,13 +174,111 @@ Configure network connectivity:
 
 5. Photos sync to `/Apps/CameraBridge/` folder
 
-### 4. Camera Configuration
+### 4. Remote Access Setup (CRITICAL for deployment)
+For international deployment, set up remote access:
+
+```bash
+setup-remote-access
+# Choose your option:
+# 1) Tailscale (Recommended) - Zero-config VPN
+# 2) Cloudflare Tunnel - Secure tunneling
+# 3) Both (Maximum redundancy)
+```
+
+**Tailscale Setup:**
+```bash
+# After choosing Tailscale:
+sudo tailscale up
+# Copy URL to browser, authenticate
+# Install Tailscale on your devices
+# SSH from anywhere: ssh tom@[tailscale-ip]
+```
+
+### 5. Camera Configuration
 Configure your camera:
 - **SMB Server**: Device IP address
 - **Share Path**: `\\[device-ip]\photos`
 - **Username**: `camera`
 - **Password**: `camera123`
 - **Protocol**: SMB/CIFS
+
+## 🧪 Testing Your Setup
+
+### Pre-Deployment Testing Checklist
+
+**1. Basic System Test:**
+```bash
+# Check all services are running
+sudo systemctl status nginx smbd camera-bridge
+
+# Test terminal UI
+sudo /opt/camera-bridge/scripts/terminal-ui.sh
+
+# Check web interface
+curl -I http://localhost/
+```
+
+**2. WiFi & Network Test:**
+```bash
+# Test WiFi management
+sudo /opt/camera-bridge/scripts/terminal-ui.sh
+# → WiFi Status & Management → Show WiFi Status
+# Should show interface details and connection info
+
+# Test network connectivity
+ping -c 3 google.com
+```
+
+**3. Dropbox Integration Test:**
+```bash
+# Test Dropbox connection
+sudo /opt/camera-bridge/scripts/terminal-ui.sh
+# → Dropbox Configuration → Test Dropbox Connection
+# Should show "✓ Dropbox Connection: SUCCESSFUL"
+
+# Manual sync test
+sudo -u camerabridge rclone lsd dropbox:
+```
+
+**4. SMB Share Test:**
+```bash
+# Test SMB locally
+smbclient -L localhost -U camera%camera123
+
+# Create test file
+echo "Test photo" > /srv/samba/camera-share/test.jpg
+
+# Verify sync (check Dropbox after ~30 seconds)
+tail -f /var/log/camera-bridge/service.log
+```
+
+**5. Remote Access Test:**
+```bash
+# Test Tailscale connection
+tailscale status
+tailscale ip -4
+
+# Test SSH from another device
+ssh tom@[tailscale-ip]
+```
+
+**6. Camera Test:**
+From a computer on same network:
+- Connect to `\\[pi-ip]\photos` (Windows) or `smb://[pi-ip]/photos` (Mac/Linux)
+- Username: `camera`, Password: `camera123`
+- Copy a test image file
+- Verify it appears in Dropbox within 1 minute
+
+**7. Emergency Fallback Test:**
+```bash
+# Disconnect WiFi to test hotspot fallback
+sudo /opt/camera-bridge/scripts/wifi-manager.sh disconnect
+
+# Should automatically create "CameraBridge-Setup" hotspot
+# Connect to it and SSH to 192.168.4.1
+```
+
+### 🚨 **CRITICAL: Test Everything Before International Deployment!**
 
 ## 📊 Monitoring & Status
 
