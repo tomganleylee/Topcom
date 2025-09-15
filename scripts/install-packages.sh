@@ -199,25 +199,124 @@ fi
 systemctl disable hostapd  # Will be managed by scripts
 systemctl disable dnsmasq  # Will be managed by scripts
 
-# Setup seamless user experience (optional)
+# Setup seamless user experience
 log "Setting up seamless user experience..."
+
+BOOT_SETUP_SUCCESS=false
+LOGIN_SETUP_SUCCESS=false
+AUTOSTART_SETUP_SUCCESS=false
+
+# Setup boot splash
 if [ -f "$SCRIPT_DIR/setup-boot-splash.sh" ]; then
-    "$SCRIPT_DIR/setup-boot-splash.sh" enable 2>/dev/null || log "Boot splash setup skipped"
+    log "Configuring boot splash screen..."
+    if "$SCRIPT_DIR/setup-boot-splash.sh" enable; then
+        log "✓ Boot splash screen configured successfully"
+        BOOT_SETUP_SUCCESS=true
+    else
+        log "✗ Boot splash setup failed"
+    fi
+else
+    log "✗ Boot splash script not found: $SCRIPT_DIR/setup-boot-splash.sh"
 fi
 
+# Setup auto-login
 if [ -f "$SCRIPT_DIR/setup-auto-login.sh" ]; then
-    "$SCRIPT_DIR/setup-auto-login.sh" enable 2>/dev/null || log "Auto-login setup skipped"
+    log "Configuring auto-login..."
+    if "$SCRIPT_DIR/setup-auto-login.sh" enable; then
+        log "✓ Auto-login configured successfully"
+        LOGIN_SETUP_SUCCESS=true
+    else
+        log "✗ Auto-login setup failed"
+    fi
+else
+    log "✗ Auto-login script not found: $SCRIPT_DIR/setup-auto-login.sh"
+fi
+
+# Setup autostart script
+if [ -f "$SCRIPT_DIR/camera-bridge-autostart.sh" ]; then
+    log "Installing autostart script..."
+    if cp "$SCRIPT_DIR/camera-bridge-autostart.sh" /usr/local/bin/camera-bridge-autostart && \
+       chmod +x /usr/local/bin/camera-bridge-autostart; then
+        log "✓ Autostart script installed successfully"
+        AUTOSTART_SETUP_SUCCESS=true
+    else
+        log "✗ Autostart script installation failed"
+    fi
+else
+    log "✗ Autostart script not found: $SCRIPT_DIR/camera-bridge-autostart.sh"
 fi
 
 log "Installation completed successfully!"
 echo ""
-echo "Next steps:"
-echo "1. Copy camera bridge scripts to /opt/camera-bridge/scripts/"
-echo "2. Copy web interface to /opt/camera-bridge/web/"
-echo "3. Configure SMB and systemd service files"
-echo "4. Run setup script to finalize installation"
+echo "=========================================="
+echo "📷 CAMERA BRIDGE INSTALLATION COMPLETE"
+echo "=========================================="
 echo ""
-echo "Seamless boot experience:"
-echo "- Boot splash screen: enabled"
-echo "- Auto-login: enabled (as camerabridge user)"
-echo "- Terminal UI will start automatically on console"
+echo "Core Services Status:"
+echo "  ✓ SMB file sharing (smbd, nmbd)"
+echo "  ✓ Web server (nginx)"
+echo "  ✓ User accounts (camerabridge, camera)"
+echo ""
+echo "Seamless Boot Experience:"
+if [ "$BOOT_SETUP_SUCCESS" = true ]; then
+    echo "  ✓ Boot splash screen: ENABLED"
+else
+    echo "  ✗ Boot splash screen: FAILED"
+fi
+
+if [ "$LOGIN_SETUP_SUCCESS" = true ]; then
+    echo "  ✓ Auto-login: ENABLED (as camerabridge user)"
+else
+    echo "  ✗ Auto-login: FAILED"
+fi
+
+if [ "$AUTOSTART_SETUP_SUCCESS" = true ]; then
+    echo "  ✓ Terminal UI auto-start: ENABLED"
+else
+    echo "  ✗ Terminal UI auto-start: FAILED"
+fi
+
+echo ""
+
+# If any seamless boot setup failed, provide manual instructions
+if [ "$BOOT_SETUP_SUCCESS" = false ] || [ "$LOGIN_SETUP_SUCCESS" = false ] || [ "$AUTOSTART_SETUP_SUCCESS" = false ]; then
+    echo "⚠️  MANUAL SETUP REQUIRED FOR SEAMLESS BOOT:"
+    echo ""
+
+    if [ "$BOOT_SETUP_SUCCESS" = false ]; then
+        echo "Enable boot splash:"
+        echo "  sudo $SCRIPT_DIR/setup-boot-splash.sh enable"
+        echo ""
+    fi
+
+    if [ "$LOGIN_SETUP_SUCCESS" = false ]; then
+        echo "Enable auto-login:"
+        echo "  sudo $SCRIPT_DIR/setup-auto-login.sh enable"
+        echo ""
+    fi
+
+    if [ "$AUTOSTART_SETUP_SUCCESS" = false ]; then
+        echo "Install autostart script:"
+        echo "  sudo cp $SCRIPT_DIR/camera-bridge-autostart.sh /usr/local/bin/camera-bridge-autostart"
+        echo "  sudo chmod +x /usr/local/bin/camera-bridge-autostart"
+        echo ""
+    fi
+
+    echo "Verify setup:"
+    echo "  sudo $SCRIPT_DIR/setup-auto-login.sh status"
+    echo "  sudo $SCRIPT_DIR/setup-boot-splash.sh status"
+    echo "  ls -la /usr/local/bin/camera-bridge-autostart"
+    echo ""
+fi
+
+echo "Next Steps:"
+echo "1. Complete any manual setup commands above (if needed)"
+echo "2. Reboot to experience seamless boot: sudo reboot"
+echo "3. Access web interface: http://$(hostname -I | awk '{print $1}')"
+echo "4. Configure Dropbox via terminal UI or web interface"
+echo ""
+echo "On reboot, you should see:"
+echo "  → Custom Camera Bridge boot splash"
+echo "  → Automatic login as camerabridge user"
+echo "  → Welcome banner with system status"
+echo "  → Terminal UI auto-start"

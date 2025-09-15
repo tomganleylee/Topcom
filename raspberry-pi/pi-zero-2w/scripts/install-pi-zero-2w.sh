@@ -437,10 +437,52 @@ fi
 chown -R camerabridge:camerabridge /opt/camera-bridge
 chown -R www-data:www-data /opt/camera-bridge/web
 
-# Setup boot splash and auto-login for seamless experience
+# Setup seamless user experience
 log "Configuring seamless user experience..."
-"$SCRIPT_DIR/../../../scripts/setup-boot-splash.sh" enable 2>/dev/null || log "Boot splash setup skipped"
-"$SCRIPT_DIR/../../../scripts/setup-auto-login.sh" enable 2>/dev/null || log "Auto-login setup skipped"
+
+BOOT_SETUP_SUCCESS=false
+LOGIN_SETUP_SUCCESS=false
+AUTOSTART_SETUP_SUCCESS=false
+
+# Setup boot splash
+if [ -f "$SCRIPT_DIR/../../../scripts/setup-boot-splash.sh" ]; then
+    log "Configuring boot splash screen..."
+    if "$SCRIPT_DIR/../../../scripts/setup-boot-splash.sh" enable; then
+        log "✓ Boot splash screen configured successfully"
+        BOOT_SETUP_SUCCESS=true
+    else
+        log "✗ Boot splash setup failed"
+    fi
+else
+    log "✗ Boot splash script not found"
+fi
+
+# Setup auto-login
+if [ -f "$SCRIPT_DIR/../../../scripts/setup-auto-login.sh" ]; then
+    log "Configuring auto-login..."
+    if "$SCRIPT_DIR/../../../scripts/setup-auto-login.sh" enable; then
+        log "✓ Auto-login configured successfully"
+        LOGIN_SETUP_SUCCESS=true
+    else
+        log "✗ Auto-login setup failed"
+    fi
+else
+    log "✗ Auto-login script not found"
+fi
+
+# Setup autostart script
+if [ -f "$SCRIPT_DIR/../../../scripts/camera-bridge-autostart.sh" ]; then
+    log "Installing autostart script..."
+    if cp "$SCRIPT_DIR/../../../scripts/camera-bridge-autostart.sh" /usr/local/bin/camera-bridge-autostart && \
+       chmod +x /usr/local/bin/camera-bridge-autostart; then
+        log "✓ Autostart script installed successfully"
+        AUTOSTART_SETUP_SUCCESS=true
+    else
+        log "✗ Autostart script installation failed"
+    fi
+else
+    log "✗ Autostart script not found"
+fi
 
 log "Pi Zero 2 W installation completed successfully!"
 echo ""
@@ -449,12 +491,63 @@ echo "🍓 PI ZERO 2W CAMERA BRIDGE READY"
 echo "==========================================="
 echo ""
 echo "Hardware: Pi Zero 2 W with USB Gadget Support"
-echo "Features:"
-echo "  • SMB Network Sharing Mode"
-echo "  • USB Gadget Storage Mode"
-echo "  • Automatic mode detection"
-echo "  • Optimized for low power"
 echo ""
+echo "Core Features Status:"
+echo "  ✓ SMB Network Sharing Mode"
+echo "  ✓ USB Gadget Storage Mode"
+echo "  ✓ Automatic mode detection"
+echo "  ✓ Pi Zero 2W optimizations"
+echo ""
+echo "Seamless Boot Experience:"
+if [ "$BOOT_SETUP_SUCCESS" = true ]; then
+    echo "  ✓ Boot splash screen: ENABLED"
+else
+    echo "  ✗ Boot splash screen: FAILED"
+fi
+
+if [ "$LOGIN_SETUP_SUCCESS" = true ]; then
+    echo "  ✓ Auto-login: ENABLED (as camerabridge user)"
+else
+    echo "  ✗ Auto-login: FAILED"
+fi
+
+if [ "$AUTOSTART_SETUP_SUCCESS" = true ]; then
+    echo "  ✓ Terminal UI auto-start: ENABLED"
+else
+    echo "  ✗ Terminal UI auto-start: FAILED"
+fi
+
+echo ""
+
+# If any seamless boot setup failed, provide manual instructions
+if [ "$BOOT_SETUP_SUCCESS" = false ] || [ "$LOGIN_SETUP_SUCCESS" = false ] || [ "$AUTOSTART_SETUP_SUCCESS" = false ]; then
+    echo "⚠️  MANUAL SETUP REQUIRED FOR SEAMLESS BOOT:"
+    echo ""
+
+    if [ "$BOOT_SETUP_SUCCESS" = false ]; then
+        echo "Enable boot splash:"
+        echo "  sudo $SCRIPT_DIR/../../../scripts/setup-boot-splash.sh enable"
+        echo ""
+    fi
+
+    if [ "$LOGIN_SETUP_SUCCESS" = false ]; then
+        echo "Enable auto-login:"
+        echo "  sudo $SCRIPT_DIR/../../../scripts/setup-auto-login.sh enable"
+        echo ""
+    fi
+
+    if [ "$AUTOSTART_SETUP_SUCCESS" = false ]; then
+        echo "Install autostart script:"
+        echo "  sudo cp $SCRIPT_DIR/../../../scripts/camera-bridge-autostart.sh /usr/local/bin/camera-bridge-autostart"
+        echo "  sudo chmod +x /usr/local/bin/camera-bridge-autostart"
+        echo ""
+    fi
+
+    echo "Verify setup:"
+    echo "  sudo $SCRIPT_DIR/../../../scripts/verify-installation.sh"
+    echo ""
+fi
+
 echo "Available Commands:"
 echo "  cb-ui          - Terminal interface"
 echo "  cb-status      - System status"
@@ -462,13 +555,21 @@ echo "  cb-usb         - USB gadget manager"
 echo "  cb-mode        - Mode switching"
 echo ""
 echo "Operation Modes:"
-echo "  SMB Mode       - Network file sharing"
-echo "  USB Gadget     - Direct camera connection"
+echo "  SMB Mode       - Network file sharing for cameras with WiFi"
+echo "  USB Gadget     - Direct camera connection via USB-C"
 echo ""
 echo "Next Steps:"
-echo "1. Reboot to apply kernel changes: sudo reboot"
-echo "2. Access web interface: http://[pi-ip]"
-echo "3. Or use terminal: cb-ui"
+echo "1. Complete any manual setup commands above (if needed)"
+echo "2. Reboot to apply kernel changes: sudo reboot"
+echo "3. After reboot, enjoy seamless boot experience!"
+echo "4. Access web interface: http://[pi-ip]"
+echo "5. Configure Dropbox via terminal UI"
+echo ""
+echo "On reboot, you should see:"
+echo "  → Custom Camera Bridge boot splash"
+echo "  → Automatic login as camerabridge user"
+echo "  → Welcome banner with Pi Zero 2W USB gadget options"
+echo "  → Terminal UI with mode switching capabilities"
 echo ""
 echo "USB Gadget Usage:"
 echo "1. Switch to USB mode: cb-mode switch-mode usb-gadget"
