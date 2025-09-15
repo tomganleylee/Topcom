@@ -349,6 +349,13 @@ if [ -f "$SCRIPT_DIR/terminal-ui-enhanced.sh" ]; then
     log "✓ Enhanced terminal UI script installed"
 fi
 
+# Install remote access setup script
+if [ -f "$SCRIPT_DIR/setup-remote-access.sh" ]; then
+    cp "$SCRIPT_DIR/setup-remote-access.sh" /usr/local/bin/setup-remote-access
+    chmod +x /usr/local/bin/setup-remote-access
+    log "✓ Remote access setup script installed"
+fi
+
 if [ "$EXISTING_INSTALLATION" = true ]; then
     log "Camera Bridge update completed successfully!"
     echo ""
@@ -426,9 +433,10 @@ fi
 
 echo "Next Steps:"
 echo "1. Complete any manual setup commands above (if needed)"
-echo "2. Reboot to experience seamless boot: sudo reboot"
-echo "3. Access web interface: http://$(hostname -I | awk '{print $1}')"
-echo "4. Configure Dropbox via terminal UI or web interface"
+echo "2. Setup remote access for deployment: setup-remote-access"
+echo "3. Reboot to experience seamless boot: sudo reboot"
+echo "4. Access web interface: http://$(hostname -I | awk '{print $1}')"
+echo "5. Configure Dropbox via terminal UI or web interface"
 echo ""
 echo "On reboot, you should see:"
 echo "  → Custom Camera Bridge boot splash"
