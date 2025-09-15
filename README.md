@@ -6,22 +6,34 @@ A complete solution for automatically syncing camera photos to cloud storage via
 
 - **Automatic Photo Sync**: Real-time sync of photos from cameras to Dropbox
 - **SMB Network Share**: Professional-grade file sharing for camera connectivity
+- **USB Gadget Mode**: Pi Zero 2 W acts as smart USB drive for direct camera connection
 - **Web Interface**: Easy setup and monitoring via web browser
 - **Terminal Interface**: Advanced management and troubleshooting tools
 - **WiFi Management**: Flexible network configuration with hotspot fallback
+- **Dual Mode Operation**: Switch between network SMB and USB gadget modes
 - **Raspberry Pi Optimized**: Special optimizations for Pi deployment
 - **USB Installer**: Create bootable USB drives for easy deployment
 - **Multi-Platform**: Works on Ubuntu/Debian systems and Raspberry Pi
 
 ## 🚀 Quick Start
 
-### Option 1: Raspberry Pi USB Installer (Recommended)
+### Option 1: Pi Zero 2 W USB Gadget Mode (NEW!)
+Transform your Pi Zero 2 W into a smart USB drive:
+```bash
+cd raspberry-pi/pi-zero-2w
+sudo ./scripts/install-pi-zero-2w.sh
+# Configure Dropbox, enable USB gadget mode
+# Connect to camera via USB-C - photos auto-sync!
+```
+See [pi-zero-2w/QUICK-START.md](raspberry-pi/pi-zero-2w/QUICK-START.md)
+
+### Option 2: Raspberry Pi USB Installer
 1. Create USB installer: `sudo ./raspberry-pi/scripts/create-usb-installer.sh /dev/sdX`
 2. Insert USB into Raspberry Pi
 3. Run: `sudo ./quick-setup.sh`
 4. System reboots automatically when complete
 
-### Option 2: Manual Installation
+### Option 3: Manual Installation
 ```bash
 # Clone and setup
 git clone <repository-url> camera-bridge
@@ -35,7 +47,7 @@ sudo ./raspberry-pi/scripts/install-rpi.sh
 sudo ./raspberry-pi/scripts/setup-rpi.sh
 ```
 
-### Option 3: Step-by-Step
+### Option 4: Step-by-Step
 See [INSTALLATION.md](docs/INSTALLATION.md) for detailed instructions.
 
 ## 📋 Requirements
@@ -43,9 +55,10 @@ See [INSTALLATION.md](docs/INSTALLATION.md) for detailed instructions.
 ### Hardware
 - **Standard PC**: Ubuntu/Debian system with WiFi and Ethernet
 - **Raspberry Pi**: Pi 4 recommended (4GB+ RAM), Pi 3B+ may work
+- **Pi Zero 2 W**: For USB gadget mode (direct camera connection)
 - **Storage**: 8GB+ SD card/storage, 16GB+ recommended
-- **Network**: Ethernet port + WiFi capability
-- **Camera**: Network-capable camera with SMB/CIFS support
+- **Network**: Ethernet port + WiFi capability (network modes)
+- **Camera**: Network-capable camera with SMB/CIFS support OR USB storage support
 
 ### Software
 - Ubuntu 20.04+ or Debian 11+

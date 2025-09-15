@@ -188,6 +188,16 @@ systemctl enable samba
 systemctl disable hostapd  # Will be managed by scripts
 systemctl disable dnsmasq  # Will be managed by scripts
 
+# Setup seamless user experience (optional)
+log "Setting up seamless user experience..."
+if [ -f "$SCRIPT_DIR/setup-boot-splash.sh" ]; then
+    "$SCRIPT_DIR/setup-boot-splash.sh" enable 2>/dev/null || log "Boot splash setup skipped"
+fi
+
+if [ -f "$SCRIPT_DIR/setup-auto-login.sh" ]; then
+    "$SCRIPT_DIR/setup-auto-login.sh" enable 2>/dev/null || log "Auto-login setup skipped"
+fi
+
 log "Installation completed successfully!"
 echo ""
 echo "Next steps:"
@@ -195,3 +205,8 @@ echo "1. Copy camera bridge scripts to /opt/camera-bridge/scripts/"
 echo "2. Copy web interface to /opt/camera-bridge/web/"
 echo "3. Configure SMB and systemd service files"
 echo "4. Run setup script to finalize installation"
+echo ""
+echo "Seamless boot experience:"
+echo "- Boot splash screen: enabled"
+echo "- Auto-login: enabled (as camerabridge user)"
+echo "- Terminal UI will start automatically on console"
