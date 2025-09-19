@@ -56,6 +56,13 @@ if [ -f /boot/auto-install-camera-bridge.txt ]; then
     AUTO_INSTALL=true
 fi
 
+# Check for offline installer
+OFFLINE_MODE=false
+if [ -f "/boot/camera-bridge-offline/install-offline.sh" ]; then
+    log "Offline installer detected"
+    OFFLINE_MODE=true
+fi
+
 # Check system requirements
 log "Checking system requirements..."
 
@@ -78,35 +85,44 @@ apt update
 apt upgrade -y
 
 # Install Pi Zero 2 W specific packages
-log "Installing packages optimized for Pi Zero 2 W..."
-apt install -y \
-    hostapd \
-    dnsmasq \
-    nginx \
-    php8.2-fpm \
-    php8.2-cli \
-    samba \
-    samba-common-bin \
-    dialog \
-    wireless-tools \
-    inotify-tools \
-    curl \
-    git \
-    net-tools \
-    htop \
-    vim \
-    rsync \
-    unzip \
-    python3 \
-    python3-pip \
-    usbutils
+if [ "$OFFLINE_MODE" = true ]; then
+    log "Using offline package installation..."
+    /boot/camera-bridge-offline/install-offline.sh
+else
+    log "Installing packages optimized for Pi Zero 2 W..."
+    apt install -y \
+        hostapd \
+        dnsmasq \
+        nginx \
+        php8.2-fpm \
+        php8.2-cli \
+        samba \
+        samba-common-bin \
+        dialog \
+        wireless-tools \
+        inotify-tools \
+        curl \
+        git \
+        net-tools \
+        htop \
+        vim \
+        rsync \
+        unzip \
+        python3 \
+        python3-pip \
+        usbutils
+fi
 
 # Install rclone
-log "Installing rclone..."
-if ! command -v rclone &> /dev/null; then
-    curl -L https://rclone.org/install.sh | bash
+if [ "$OFFLINE_MODE" = false ]; then
+    log "Installing rclone..."
+    if ! command -v rclone &> /dev/null; then
+        curl -L https://rclone.org/install.sh | bash
+    else
+        log "rclone already installed"
+    fi
 else
-    log "rclone already installed"
+    log "rclone installed via offline installer"
 fi
 
 # Pi Zero 2 W specific optimizations
