@@ -86,6 +86,9 @@ fi
 log "Setting SMB password for camera user..."
 echo -e "camera123\ncamera123" | smbpasswd -a -s camera
 
+# Enable SMB user
+smbpasswd -e camera
+
 log "Creating directory structure..."
 mkdir -p /opt/camera-bridge/{scripts,web,config}
 mkdir -p /srv/samba/camera-share
@@ -247,11 +250,92 @@ interface=wlan0
 dhcp-range=192.168.4.2,192.168.4.20,255.255.255.0,24h
 EOF
 
+log "Configuring Samba/SMB..."
+# Apply custom SMB configuration
+if [ -f "$PROJECT_DIR/config/smb.conf" ]; then
+    log "Applying camera-bridge SMB configuration..."
+    cp /etc/samba/smb.conf /etc/samba/smb.conf.backup.$(date +%Y%m%d)
+    cp "$PROJECT_DIR/config/smb.conf" /etc/samba/smb.conf
+    # Add camera user to SMB
+    chown -R camera:camera /srv/samba/camera-share
+    chmod 775 /srv/samba/camera-share
+    log "SMB configuration updated"
+else
+    warn "SMB configuration template not found, using defaults"
+fi
+
+# Test SMB configuration
+if testparm -s /etc/samba/smb.conf > /dev/null 2>&1; then
+    log "SMB configuration valid"
+else
+    error "SMB configuration has errors - check /etc/samba/smb.conf"
+fi
+
+# Restart SMB services (skip nmbd as it's optional)
+systemctl restart smbd
+systemctl stop nmbd 2>/dev/null || true
+systemctl disable nmbd 2>/dev/null || true
+log "SMB service restarted (nmbd disabled - not required for IP-based access)"
+
+log "Installing camera-bridge systemd service..."
+# Install systemd service
+if [ -f "$PROJECT_DIR/config/camera-bridge.service" ]; then
+    cp "$PROJECT_DIR/config/camera-bridge.service" /etc/systemd/system/
+    systemctl daemon-reload
+    systemctl enable camera-bridge
+    log "Camera bridge service installed and enabled"
+else
+    warn "Camera bridge service file not found"
+fi
+
+log "Checking for existing Dropbox configuration..."
+# Check for existing rclone configuration
+RCLONE_CONFIG_FOUND=false
+RCLONE_CONFIG_SOURCE=""
+
+# Check in current user's home
+if [ -f "$HOME/.config/rclone/rclone.conf" ] && [ -s "$HOME/.config/rclone/rclone.conf" ]; then
+    RCLONE_CONFIG_FOUND=true
+    RCLONE_CONFIG_SOURCE="$HOME/.config/rclone/rclone.conf"
+    log "Found rclone config at: $RCLONE_CONFIG_SOURCE"
+# Check if running user has rclone configured
+elif [ -n "$SUDO_USER" ] && [ -f "/home/$SUDO_USER/.config/rclone/rclone.conf" ] && [ -s "/home/$SUDO_USER/.config/rclone/rclone.conf" ]; then
+    RCLONE_CONFIG_FOUND=true
+    RCLONE_CONFIG_SOURCE="/home/$SUDO_USER/.config/rclone/rclone.conf"
+    log "Found rclone config at: $RCLONE_CONFIG_SOURCE"
+fi
+
+# Copy rclone configuration if found
+if [ "$RCLONE_CONFIG_FOUND" = true ]; then
+    log "Copying existing rclone configuration for camera-bridge..."
+    mkdir -p /home/camerabridge/.config/rclone
+    cp "$RCLONE_CONFIG_SOURCE" /home/camerabridge/.config/rclone/rclone.conf
+    chown -R camerabridge:camerabridge /home/camerabridge/.config/rclone
+    chmod 600 /home/camerabridge/.config/rclone/rclone.conf
+
+    # Test configuration
+    if sudo -u camerabridge rclone listremotes | grep -q "dropbox:"; then
+        log "✓ Dropbox configuration verified and working!"
+        DROPBOX_CONFIGURED=true
+    else
+        warn "Rclone configuration copied but Dropbox remote not found"
+        warn "You'll need to configure Dropbox using the terminal UI"
+        DROPBOX_CONFIGURED=false
+    fi
+else
+    warn "No existing rclone configuration found"
+    warn "You'll need to configure Dropbox access using:"
+    warn "  sudo ./scripts/terminal-ui.sh"
+    warn "  OR"
+    warn "  Access web interface for setup"
+    DROPBOX_CONFIGURED=false
+fi
+
 log "Setting up sudoers for web interface..."
 cat > /etc/sudoers.d/camera-bridge << 'EOF'
 www-data ALL=(ALL) NOPASSWD: /bin/cp /tmp/wpa_supplicant.conf /etc/wpa_supplicant/wpa_supplicant.conf
 www-data ALL=(ALL) NOPASSWD: /bin/cp /tmp/rclone.conf /home/camerabridge/.config/rclone/rclone.conf
-www-data ALL=(ALL) NOPASSWD: /bin/chown camerabridge:camerabridge /home/camerabridge/.config/rclone/rclone.conf
+www-data ALL=(ALL) NOPASSWD: /bin/chown camerabridge\:camerabridge /home/camerabridge/.config/rclone/rclone.conf
 www-data ALL=(ALL) NOPASSWD: /usr/sbin/iwlist
 www-data ALL=(ALL) NOPASSWD: /opt/camera-bridge/scripts/*
 www-data ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart wpa_supplicant
@@ -375,9 +459,18 @@ echo "📷 CAMERA BRIDGE INSTALLATION COMPLETE"
 echo "=========================================="
 echo ""
 echo "Core Services Status:"
-echo "  ✓ SMB file sharing (smbd, nmbd)"
-echo "  ✓ Web server (nginx)"
-echo "  ✓ User accounts (camerabridge, camera)"
+echo "  ✓ SMB file sharing (smbd, nmbd) - CONFIGURED"
+echo "  ✓ SMB share: /srv/samba/camera-share"
+echo "  ✓ SMB credentials: camera / camera123"
+echo "  ✓ Web server (nginx) - RUNNING"
+echo "  ✓ User accounts (camerabridge, camera) - CREATED"
+echo "  ✓ Camera bridge service - INSTALLED"
+
+if [ "$DROPBOX_CONFIGURED" = true ]; then
+    echo "  ✓ Dropbox integration - CONFIGURED"
+else
+    echo "  ⚠ Dropbox integration - NEEDS CONFIGURATION"
+fi
 echo ""
 echo "Seamless Boot Experience:"
 if [ "$BOOT_SETUP_SUCCESS" = true ]; then
@@ -432,14 +525,40 @@ if [ "$BOOT_SETUP_SUCCESS" = false ] || [ "$LOGIN_SETUP_SUCCESS" = false ] || [ 
 fi
 
 echo "Next Steps:"
-echo "1. Complete any manual setup commands above (if needed)"
-echo "2. Setup remote access for deployment: setup-remote-access"
-echo "3. Reboot to experience seamless boot: sudo reboot"
-echo "4. Access web interface: http://$(hostname -I | awk '{print $1}')"
-echo "5. Configure Dropbox via terminal UI or web interface"
+if [ "$DROPBOX_CONFIGURED" = true ]; then
+    echo "1. Start the camera-bridge service:"
+    echo "   sudo systemctl start camera-bridge"
+    echo ""
+    echo "2. Test the setup:"
+    echo "   - Connect laptop to network (WiFi or Ethernet)"
+    echo "   - Access SMB share: \\\\$(hostname -I | awk '{print $1}')\\photos"
+    echo "   - Credentials: camera / camera123"
+    echo "   - Drop photos → automatic Dropbox sync"
+    echo ""
+    echo "3. Monitor service:"
+    echo "   sudo journalctl -u camera-bridge -f"
+    echo ""
+    echo "✅ YOUR SYSTEM IS READY FOR TESTING!"
+else
+    echo "1. Configure Dropbox first (REQUIRED):"
+    echo "   sudo ./scripts/terminal-ui.sh"
+    echo "   OR"
+    echo "   Access web interface: http://$(hostname -I | awk '{print $1}')"
+    echo ""
+    echo "2. After Dropbox is configured, start the service:"
+    echo "   sudo systemctl start camera-bridge"
+    echo ""
+    echo "3. Test the setup:"
+    echo "   - Connect laptop to network"
+    echo "   - Access SMB share: \\\\$(hostname -I | awk '{print $1}')\\photos"
+    echo "   - Drop photos for sync"
+fi
 echo ""
-echo "On reboot, you should see:"
-echo "  → Custom Camera Bridge boot splash"
-echo "  → Automatic login as camerabridge user"
-echo "  → Welcome banner with system status"
+echo "Optional: Setup remote access for deployment:"
+echo "  setup-remote-access"
+echo ""
+echo "Optional: Reboot for seamless boot experience:"
+echo "  sudo reboot"
+echo "  → Custom boot splash"
+echo "  → Auto-login as camerabridge"
 echo "  → Terminal UI auto-start"
