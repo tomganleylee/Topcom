@@ -1,0 +1,17 @@
+[Unit]
+Description=Camera Bridge Simple Sync Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=camerabridge
+Group=camerabridge
+ExecStart=/usr/bin/bash /opt/camera-bridge/scripts/simple-monitor.sh
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
