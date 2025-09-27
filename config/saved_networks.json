@@ -1,0 +1,15 @@
+{
+  "networks": [
+    {
+      "ssid": "VM5469276",
+      "psk_hash": "ff6664e5c5a76a5eabc95934542aa50c47d303aa880f099f72330e64dcdb51a1",
+      "password_saved": true,
+      "priority": 10,
+      "last_connected": "2025-09-27T22:17:35.528780Z",
+      "auto_connect": true
+    }
+  ],
+  "version": "1.0",
+  "auto_connect": true,
+  "last_updated": "2025-09-27T22:17:35.528889Z"
+}

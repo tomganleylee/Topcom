@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//etc/wpa_supplicant/**)",
+      "Bash(chmod:*)",
+      "Bash(sudo:*)",
+      "Read(//srv/samba/**)",
+      "Bash(command -v:*)",
+      "Bash(echo:*)",
+      "Bash(bash:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
