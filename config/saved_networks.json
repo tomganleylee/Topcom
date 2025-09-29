@@ -7,9 +7,17 @@
       "priority": 10,
       "last_connected": "2025-09-27T22:17:35.528780Z",
       "auto_connect": true
+    },
+    {
+      "ssid": "Raptor_2G",
+      "psk_hash": "f1b3c74a7c1e1d5119872997c1d68bba9e4dffcb54672c8c35c61b984b5a347a",
+      "password_saved": true,
+      "priority": 10,
+      "last_connected": "2025-09-29T13:48:14Z",
+      "auto_connect": true
     }
   ],
   "version": "1.0",
   "auto_connect": true,
-  "last_updated": "2025-09-27T22:17:35.528889Z"
+  "last_updated": "2025-09-29T13:48:14Z"
 }
