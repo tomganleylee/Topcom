@@ -21,89 +21,34 @@ $dropbox_configured = check_dropbox_configured();
 // Handle form submissions
 if (isset($_POST['submit'])) {
     if ($_POST['submit'] == 'dropbox_token') {
-        $token_input = trim($_POST['dropbox_token']);
+        $token = trim($_POST['dropbox_token']);
 
-        if (!empty($token_input)) {
-            // Detect token format
-            $is_oauth2 = false;
-            $token_json = '';
+        if (!empty($token)) {
+            // Create rclone configuration
+            $config = "[dropbox]\n";
+            $config .= "type = dropbox\n";
+            $config .= "token = {\"access_token\":\"$token\",\"token_type\":\"bearer\",\"expiry\":\"0001-01-01T00:00:00Z\"}\n";
 
-            // Check if it's JSON (OAuth2 format)
-            if (strpos($token_input, '{') !== false && strpos($token_input, '}') !== false) {
-                // OAuth2 token - validate JSON
-                $token_data = json_decode($token_input, true);
-                if (json_last_error() === JSON_ERROR_NONE && isset($token_data['access_token'])) {
-                    $is_oauth2 = true;
-                    $token_json = $token_input;
-                    $has_refresh = isset($token_data['refresh_token']);
+            // Create directory and write config
+            exec('sudo -u camerabridge mkdir -p /home/camerabridge/.config/rclone');
+            file_put_contents('/tmp/rclone.conf', $config);
+            exec('sudo cp /tmp/rclone.conf /home/camerabridge/.config/rclone/rclone.conf');
+            exec('sudo chown camerabridge:camerabridge /home/camerabridge/.config/rclone/rclone.conf');
+            exec('sudo chmod 600 /home/camerabridge/.config/rclone/rclone.conf');
 
-                    if ($has_refresh) {
-                        $message = '<div class="success">OAuth2 token detected with refresh capability!</div>';
-                    } else {
-                        $message = '<div class="warning">OAuth2 token detected but no refresh token found.</div>';
-                    }
-                }
+            // Test connection
+            exec('sudo -u camerabridge rclone lsd dropbox: 2>&1', $output, $return_code);
+
+            if ($return_code == 0) {
+                $message = '<div class="success">Dropbox configured successfully!</div>';
+                $dropbox_configured = true;
+                $current_step = 'complete';
+            } else {
+                $message = '<div class="error">Failed to connect to Dropbox. Please check your token and try again.</div>';
             }
 
-            // If not OAuth2, treat as legacy token
-            if (!$is_oauth2) {
-                // Legacy token format (just the access token string)
-                if (strpos($token_input, 'sl.') === 0) {
-                    // Create JSON format for legacy token
-                    $token_json = json_encode([
-                        'access_token' => $token_input,
-                        'token_type' => 'bearer',
-                        'expiry' => '0001-01-01T00:00:00Z'
-                    ]);
-                    $message = '<div class="warning">Legacy token format detected. Consider using OAuth2 for auto-refresh.</div>';
-                } else {
-                    $message = '<div class="error">Invalid token format. Please provide either an OAuth2 JSON token or a legacy token starting with "sl."</div>';
-                }
-            }
-
-            if ($token_json) {
-                // Create rclone configuration
-                $config = "[dropbox]\n";
-                $config .= "type = dropbox\n";
-                $config .= "token = $token_json\n";
-
-                // Create directory and write config
-                exec('sudo -u camerabridge mkdir -p /home/camerabridge/.config/rclone 2>&1', $output);
-
-                // Write to temp file first
-                $temp_file = '/tmp/rclone_config_' . time() . '.conf';
-                file_put_contents($temp_file, $config);
-
-                // Copy to final location
-                exec('sudo cp ' . escapeshellarg($temp_file) . ' /home/camerabridge/.config/rclone/rclone.conf 2>&1', $output);
-                exec('sudo chown camerabridge:camerabridge /home/camerabridge/.config/rclone/rclone.conf 2>&1', $output);
-                exec('sudo chmod 600 /home/camerabridge/.config/rclone/rclone.conf 2>&1', $output);
-
-                // Test connection
-                exec('timeout 30 sudo -u camerabridge rclone lsd dropbox: 2>&1', $output, $return_code);
-
-                if ($return_code == 0) {
-                    if ($is_oauth2 && isset($has_refresh) && $has_refresh) {
-                        $message = '<div class="success">✅ Dropbox configured successfully with OAuth2 auto-refresh!</div>';
-                    } else {
-                        $message = '<div class="success">✅ Dropbox configured successfully!</div>';
-                    }
-                    $dropbox_configured = true;
-                    $current_step = 'complete';
-                } else {
-                    $message = '<div class="error">Failed to connect to Dropbox. Error: ' . implode(' ', $output) . '</div>';
-
-                    // Additional debug info
-                    $message .= '<div class="info-box"><strong>Debug Info:</strong><br>';
-                    $message .= 'Token type: ' . ($is_oauth2 ? 'OAuth2' : 'Legacy') . '<br>';
-                    $message .= 'Has refresh: ' . (isset($has_refresh) && $has_refresh ? 'Yes' : 'No') . '<br>';
-                    $message .= 'Config file exists: ' . (file_exists('/home/camerabridge/.config/rclone/rclone.conf') ? 'Yes' : 'No') . '<br>';
-                    $message .= '</div>';
-                }
-
-                // Clean up temp file
-                unlink($temp_file);
-            }
+            // Clean up temp file
+            unlink('/tmp/rclone.conf');
         } else {
             $message = '<div class="error">Please provide a valid Dropbox token.</div>';
         }
@@ -143,7 +88,7 @@ if (isset($_POST['submit'])) {
             background: white;
             border-radius: 20px;
             box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-            max-width: 600px;
+            max-width: 500px;
             width: 100%;
             overflow: hidden;
         }
@@ -240,9 +185,8 @@ if (isset($_POST['submit'])) {
         }
         textarea {
             resize: vertical;
-            min-height: 120px;
+            min-height: 100px;
             font-family: monospace;
-            font-size: 0.95em;
         }
         button {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -290,14 +234,6 @@ if (isset($_POST['submit'])) {
             border-radius: 10px;
             margin-bottom: 20px;
             border-left: 4px solid #dc3545;
-        }
-        .warning {
-            background: #fff3cd;
-            color: #856404;
-            padding: 15px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            border-left: 4px solid #ffc107;
         }
         .info-box {
             background: #e7f3ff;
@@ -353,31 +289,6 @@ if (isset($_POST['submit'])) {
             color: #666;
             margin-top: 5px;
         }
-        .token-type-indicator {
-            display: inline-block;
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-size: 0.85em;
-            margin-left: 10px;
-        }
-        .oauth2-indicator {
-            background: #d4edda;
-            color: #155724;
-        }
-        .legacy-indicator {
-            background: #fff3cd;
-            color: #856404;
-        }
-        .code-example {
-            background: #263238;
-            color: #aed581;
-            padding: 10px;
-            border-radius: 6px;
-            font-family: monospace;
-            font-size: 0.85em;
-            overflow-x: auto;
-            margin: 10px 0;
-        }
     </style>
 </head>
 <body>
@@ -403,49 +314,23 @@ if (isset($_POST['submit'])) {
 
             <?php if ($current_step == 'dropbox'): ?>
                 <h2>Connect to Dropbox</h2>
-                <p style="margin-bottom: 20px;">Enter your Dropbox token to enable automatic photo synchronization.</p>
+                <p style="margin-bottom: 20px;">Enter your Dropbox access token to enable automatic photo synchronization.</p>
 
                 <div class="info-box">
-                    <strong>📌 Two ways to get your token:</strong>
-
-                    <div style="margin-top: 15px;">
-                        <strong>Option 1: OAuth2 Token (Recommended)</strong>
-                        <span class="token-type-indicator oauth2-indicator">Auto-Refresh</span>
-                    </div>
-                    <ol style="margin-top: 10px; margin-left: 20px;">
-                        <li>On a computer with browser, run: <code style="background: #f0f0f0; padding: 2px 6px; border-radius: 4px;">rclone authorize dropbox</code></li>
-                        <li>Log in to Dropbox when browser opens</li>
-                        <li>Copy the ENTIRE JSON output (with {} brackets)</li>
-                    </ol>
-
-                    <div class="code-example">
-                    {"access_token":"sl.xxx...","token_type":"bearer","refresh_token":"xxx...","expiry":"2025-01-01T00:00:00Z"}
-                    </div>
-
-                    <div style="margin-top: 20px;">
-                        <strong>Option 2: Legacy Token</strong>
-                        <span class="token-type-indicator legacy-indicator">May Expire</span>
-                    </div>
+                    <strong>📌 How to get your Dropbox token:</strong>
                     <ol style="margin-top: 10px; margin-left: 20px;">
                         <li>Visit <a href="https://www.dropbox.com/developers/apps" target="_blank">Dropbox App Console</a></li>
-                        <li>Create app with "Full Dropbox" access</li>
-                        <li>Generate access token</li>
-                        <li>Copy token (starts with "sl.")</li>
+                        <li>Create a new app with "Full Dropbox" access</li>
+                        <li>Generate an access token in the app settings</li>
+                        <li>Copy and paste the token below</li>
                     </ol>
                 </div>
 
                 <form method="POST">
                     <div class="form-group">
-                        <label for="dropbox_token">Dropbox Token (OAuth2 JSON or Legacy)</label>
-                        <textarea
-                            name="dropbox_token"
-                            id="dropbox_token"
-                            placeholder="Paste either:&#10;1. Complete OAuth2 JSON: {&quot;access_token&quot;:&quot;...&quot;,&quot;refresh_token&quot;:&quot;...&quot;}&#10;2. Legacy token: sl.xxxxx..."
-                            required></textarea>
-                        <div class="help-text">
-                            ✅ Accepts both OAuth2 JSON (with auto-refresh) and legacy tokens<br>
-                            ✅ OAuth2 tokens never expire | Legacy tokens may need renewal
-                        </div>
+                        <label for="dropbox_token">Dropbox Access Token</label>
+                        <textarea name="dropbox_token" id="dropbox_token" placeholder="Enter your Dropbox access token here..." required></textarea>
+                        <div class="help-text">The token should start with "sl." and be quite long</div>
                     </div>
                     <button type="submit" name="submit" value="dropbox_token">Connect to Dropbox</button>
                 </form>

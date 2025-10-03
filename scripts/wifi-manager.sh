@@ -13,6 +13,7 @@ AP_PASSWORD="setup123"
 CONFIG_FILE="/etc/wpa_supplicant/wpa_supplicant.conf"
 HOSTAPD_CONFIG="/etc/hostapd/hostapd.conf"
 LOG_FILE="/var/log/camera-bridge/wifi.log"
+SAVED_NETWORKS_FILE="/opt/camera-bridge/config/saved_networks.json"
 
 # Color output
 RED='\033[0;31m'
@@ -60,6 +61,448 @@ check_wifi_interface() {
         return 1
     fi
     return 0
+}
+
+# Saved Networks Management Functions
+
+# Initialize saved networks file if it doesn't exist
+init_saved_networks() {
+    if [ ! -f "$SAVED_NETWORKS_FILE" ]; then
+        mkdir -p "$(dirname "$SAVED_NETWORKS_FILE")"
+        cat > "$SAVED_NETWORKS_FILE" << 'EOF'
+{
+  "networks": [],
+  "version": "1.0",
+  "auto_connect": true,
+  "last_updated": ""
+}
+EOF
+        chown camerabridge:camerabridge "$SAVED_NETWORKS_FILE" 2>/dev/null || true
+        chmod 664 "$SAVED_NETWORKS_FILE"
+    fi
+}
+
+# Save network credentials after successful connection
+save_network() {
+    local ssid="$1"
+    local password="$2"
+
+    if [ -z "$ssid" ]; then
+        return 1
+    fi
+
+    init_saved_networks
+
+    # Generate PSK hash for security
+    local psk_hash=""
+    if [ -n "$password" ] && command -v wpa_passphrase >/dev/null 2>&1; then
+        psk_hash=$(wpa_passphrase "$ssid" "$password" | grep -E "^\s*psk=" | cut -d= -f2)
+    fi
+
+    # Get current timestamp
+    local timestamp=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+
+    # Read current networks
+    local networks_json=""
+    if [ -f "$SAVED_NETWORKS_FILE" ]; then
+        networks_json=$(cat "$SAVED_NETWORKS_FILE")
+    fi
+
+    # Create new network entry
+    local new_network=""
+    if [ -n "$psk_hash" ]; then
+        new_network="{\"ssid\":\"$ssid\",\"psk_hash\":\"$psk_hash\",\"password_saved\":true,\"priority\":10,\"last_connected\":\"$timestamp\",\"auto_connect\":true}"
+    else
+        new_network="{\"ssid\":\"$ssid\",\"psk_hash\":\"\",\"password_saved\":false,\"priority\":5,\"last_connected\":\"$timestamp\",\"auto_connect\":true}"
+    fi
+
+    # Use Python to safely update JSON (if available) or use basic text manipulation
+    if command -v python3 >/dev/null 2>&1; then
+        python3 -c "
+import json
+import sys
+try:
+    with open('$SAVED_NETWORKS_FILE', 'r') as f:
+        data = json.load(f)
+
+    # Remove existing entry for this SSID
+    data['networks'] = [n for n in data['networks'] if n['ssid'] != '$ssid']
+
+    # Create new entry directly in Python
+    new_entry = {
+        'ssid': '$ssid',
+        'psk_hash': '$psk_hash',
+        'password_saved': $([ -n '$psk_hash' ] && echo 'True' || echo 'False'),
+        'priority': $([ -n '$psk_hash' ] && echo '10' || echo '5'),
+        'last_connected': '$timestamp',
+        'auto_connect': True
+    }
+
+    data['networks'].append(new_entry)
+    data['last_updated'] = '$timestamp'
+
+    with open('$SAVED_NETWORKS_FILE', 'w') as f:
+        json.dump(data, f, indent=2)
+    print('Network saved successfully')
+except Exception as e:
+    print(f'Error: {e}', file=sys.stderr)
+    sys.exit(1)
+"
+    else
+        # Fallback: simple append (less robust)
+        debug "Python not available, using basic network storage"
+    fi
+
+    info "Network '$ssid' saved for auto-reconnection"
+}
+
+# List saved networks
+list_saved_networks() {
+    init_saved_networks
+
+    if ! command -v python3 >/dev/null 2>&1; then
+        error "Python3 required for saved networks management"
+        return 1
+    fi
+
+    python3 -c "
+import json
+import sys
+try:
+    with open('$SAVED_NETWORKS_FILE', 'r') as f:
+        data = json.load(f)
+
+    networks = data.get('networks', [])
+    if not networks:
+        print('No saved networks')
+        sys.exit(0)
+
+    print('Saved Networks:')
+    for i, net in enumerate(sorted(networks, key=lambda x: x.get('priority', 0), reverse=True)):
+        status = '✓' if net.get('password_saved', False) else '○'
+        priority = net.get('priority', 0)
+        last_conn = net.get('last_connected', 'Never')
+        auto_conn = '🔄' if net.get('auto_connect', True) else '⏸️'
+        print(f'{i+1:2d}. {status} {net[\"ssid\"]} (Priority: {priority}) {auto_conn}')
+        print(f'     Last connected: {last_conn}')
+
+except Exception as e:
+    print(f'Error reading saved networks: {e}', file=sys.stderr)
+    sys.exit(1)
+"
+}
+
+# Connect to a saved network
+connect_saved_network() {
+    local ssid="$1"
+
+    if [ -z "$ssid" ]; then
+        error "SSID required"
+        return 1
+    fi
+
+    init_saved_networks
+
+    if ! command -v python3 >/dev/null 2>&1; then
+        error "Python3 required for saved networks management"
+        return 1
+    fi
+
+    # Get saved network details
+    local network_info=$(python3 -c "
+import json
+import sys
+try:
+    with open('$SAVED_NETWORKS_FILE', 'r') as f:
+        data = json.load(f)
+
+    networks = data.get('networks', [])
+    for net in networks:
+        if net['ssid'] == '$ssid':
+            if net.get('password_saved', False):
+                print(f'FOUND:{net[\"psk_hash\"]}')
+            else:
+                print('FOUND_OPEN:')
+            sys.exit(0)
+
+    print('NOT_FOUND')
+except Exception as e:
+    print(f'ERROR:{e}', file=sys.stderr)
+" 2>/dev/null)
+
+    if [[ "$network_info" == NOT_FOUND ]]; then
+        error "Network '$ssid' not found in saved networks"
+        return 1
+    elif [[ "$network_info" == ERROR:* ]]; then
+        error "Failed to read saved networks"
+        return 1
+    elif [[ "$network_info" == FOUND:* ]]; then
+        local psk_hash="${network_info#FOUND:}"
+        info "Connecting to saved network: $ssid"
+        connect_wifi_with_psk "$ssid" "$psk_hash"
+    elif [[ "$network_info" == FOUND_OPEN: ]]; then
+        info "Connecting to saved open network: $ssid"
+        connect_wifi "$ssid" ""
+    fi
+}
+
+# Connect with pre-computed PSK hash
+connect_wifi_with_psk() {
+    local ssid="$1"
+    local psk_hash="$2"
+
+    check_root
+
+    if [ -z "$ssid" ]; then
+        error "SSID is required"
+        return 1
+    fi
+
+    info "Connecting to WiFi network: $ssid (using saved credentials)"
+
+    # Stop AP mode first if it's running
+    if systemctl is-active --quiet hostapd; then
+        stop_ap_mode
+        sleep 2
+    fi
+
+    # Create wpa_supplicant configuration with PSK hash
+    cat > /tmp/wpa_supplicant.conf << EOF
+ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
+update_config=1
+country=US
+
+network={
+    ssid="$ssid"
+    psk=$psk_hash
+    key_mgmt=WPA-PSK
+    priority=1
+}
+EOF
+
+    # Apply configuration and connect
+    if [ -f "$CONFIG_FILE" ]; then
+        cp "$CONFIG_FILE" "$CONFIG_FILE.backup.$(date +%Y%m%d_%H%M%S)"
+    fi
+
+    cp /tmp/wpa_supplicant.conf "$CONFIG_FILE"
+    chmod 600 "$CONFIG_FILE"
+    rm /tmp/wpa_supplicant.conf
+
+    # Restart networking
+    pkill wpa_supplicant 2>/dev/null || true
+    sleep 2
+
+    if command -v NetworkManager >/dev/null 2>&1; then
+        systemctl restart NetworkManager
+    else
+        wpa_supplicant -B -i "$WIFI_INTERFACE" -c "$CONFIG_FILE"
+        dhclient "$WIFI_INTERFACE" 2>/dev/null || dhcpcd "$WIFI_INTERFACE" 2>/dev/null || true
+    fi
+
+    # Wait for connection
+    info "Waiting for connection..."
+    local attempts=0
+    local max_attempts=20
+
+    while [ $attempts -lt $max_attempts ]; do
+        sleep 2
+        attempts=$((attempts + 1))
+
+        if get_connection_status >/dev/null 2>&1; then
+            local connected_ssid=$(get_connection_status 2>/dev/null | grep "SSID:" | cut -d: -f2 | xargs)
+            if [ "$connected_ssid" = "$ssid" ]; then
+                info "Successfully connected to: $ssid"
+                info "IP Address: $(get_ip_address)"
+                return 0
+            fi
+        fi
+    done
+
+    error "Failed to connect to $ssid"
+    return 1
+}
+
+# Remove a saved network
+remove_saved_network() {
+    local ssid="$1"
+
+    if [ -z "$ssid" ]; then
+        error "SSID required"
+        return 1
+    fi
+
+    init_saved_networks
+
+    if ! command -v python3 >/dev/null 2>&1; then
+        error "Python3 required for saved networks management"
+        return 1
+    fi
+
+    python3 -c "
+import json
+import sys
+try:
+    with open('$SAVED_NETWORKS_FILE', 'r') as f:
+        data = json.load(f)
+
+    original_count = len(data['networks'])
+    data['networks'] = [n for n in data['networks'] if n['ssid'] != '$ssid']
+
+    if len(data['networks']) == original_count:
+        print('Network not found in saved networks')
+        sys.exit(1)
+
+    data['last_updated'] = '$(date -u '+%Y-%m-%dT%H:%M:%SZ')'
+
+    with open('$SAVED_NETWORKS_FILE', 'w') as f:
+        json.dump(data, f, indent=2)
+
+    print('Network removed successfully')
+except Exception as e:
+    print(f'Error: {e}', file=sys.stderr)
+    sys.exit(1)
+"
+
+    if [ $? -eq 0 ]; then
+        info "Network '$ssid' removed from saved networks"
+    else
+        error "Failed to remove network '$ssid'"
+        return 1
+    fi
+}
+
+# Auto-connect to available saved networks
+auto_connect_saved() {
+    init_saved_networks
+
+    if ! command -v python3 >/dev/null 2>&1; then
+        debug "Python3 not available, skipping auto-connect"
+        return 1
+    fi
+
+    # Check if auto-connect is enabled
+    local auto_enabled=$(python3 -c "
+import json
+try:
+    with open('$SAVED_NETWORKS_FILE', 'r') as f:
+        data = json.load(f)
+    print('true' if data.get('auto_connect', True) else 'false')
+except:
+    print('true')
+" 2>/dev/null)
+
+    if [ "$auto_enabled" != "true" ]; then
+        debug "Auto-connect disabled"
+        return 0
+    fi
+
+    # Check if already connected
+    if current_ssid=$(iwgetid -r 2>/dev/null) && [ -n "$current_ssid" ]; then
+        debug "Already connected to: $current_ssid"
+        return 0
+    fi
+
+    info "Auto-connecting to saved networks..."
+
+    # Get available networks
+    local available_networks=$(scan_networks 2>/dev/null | tr '\n' '|')
+
+    if [ -z "$available_networks" ]; then
+        debug "No networks available for auto-connect"
+        return 1
+    fi
+
+    # Get prioritized saved networks that are available
+    local networks_to_try=$(python3 -c "
+import json
+import sys
+try:
+    with open('$SAVED_NETWORKS_FILE', 'r') as f:
+        data = json.load(f)
+
+    available = '$available_networks'.split('|')
+    available = [n.strip() for n in available if n.strip()]
+
+    networks = data.get('networks', [])
+    candidates = []
+
+    for net in networks:
+        if net.get('auto_connect', True) and net['ssid'] in available:
+            candidates.append((net['ssid'], net.get('priority', 0)))
+
+    # Sort by priority (highest first)
+    candidates.sort(key=lambda x: x[1], reverse=True)
+
+    for ssid, priority in candidates[:3]:  # Try top 3
+        print(ssid)
+
+except Exception as e:
+    pass
+" 2>/dev/null)
+
+    if [ -z "$networks_to_try" ]; then
+        debug "No saved networks available"
+        return 1
+    fi
+
+    # Try connecting to each network
+    echo "$networks_to_try" | while read -r ssid; do
+        if [ -n "$ssid" ]; then
+            info "Trying saved network: $ssid"
+            if connect_saved_network "$ssid"; then
+                info "Auto-connected to: $ssid"
+                return 0
+            fi
+            sleep 2
+        fi
+    done
+
+    return 1
+}
+
+# Generate multi-network wpa_supplicant.conf from saved networks
+generate_multi_network_config() {
+    init_saved_networks
+
+    if ! command -v python3 >/dev/null 2>&1; then
+        error "Python3 required for multi-network configuration"
+        return 1
+    fi
+
+    python3 -c "
+import json
+import sys
+try:
+    with open('$SAVED_NETWORKS_FILE', 'r') as f:
+        data = json.load(f)
+
+    networks = data.get('networks', [])
+
+    # Generate wpa_supplicant.conf header
+    print('ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev')
+    print('update_config=1')
+    print('country=US')
+    print('')
+
+    # Add each saved network
+    for net in networks:
+        if net.get('auto_connect', True):
+            print('network={')
+            print(f'    ssid=\"{net[\"ssid\"]}\"')
+            if net.get('password_saved', False) and net.get('psk_hash'):
+                print(f'    psk={net[\"psk_hash\"]}')
+                print('    key_mgmt=WPA-PSK')
+            else:
+                print('    key_mgmt=NONE')
+            print(f'    priority={net.get(\"priority\", 5)}')
+            print('}')
+            print('')
+
+except Exception as e:
+    print(f'# Error generating config: {e}', file=sys.stderr)
+    sys.exit(1)
+"
 }
 
 # Start Access Point mode
@@ -232,6 +675,10 @@ EOF
             if [ "$connected_ssid" = "$ssid" ]; then
                 info "Successfully connected to: $ssid"
                 info "IP Address: $(get_ip_address)"
+
+                # Save network credentials for future use
+                save_network "$ssid" "$password"
+
                 return 0
             fi
         fi
@@ -367,6 +814,11 @@ show_help() {
     echo "  start-ap              Start Access Point mode"
     echo "  stop-ap               Stop Access Point mode"
     echo "  connect <SSID> <PWD>  Connect to WiFi network"
+    echo "  connect-saved <SSID>  Connect to saved network"
+    echo "  auto-connect          Auto-connect to saved networks"
+    echo "  list-saved            List saved networks"
+    echo "  remove-saved <SSID>   Remove saved network"
+    echo "  multi-config          Generate multi-network config"
     echo "  disconnect            Disconnect from current network"
     echo "  status                Show connection status"
     echo "  scan                  Scan for available networks"
@@ -378,6 +830,9 @@ show_help() {
     echo "Examples:"
     echo "  $0 start-ap"
     echo "  $0 connect \"MyWiFi\" \"mypassword\""
+    echo "  $0 list-saved"
+    echo "  $0 connect-saved \"MyWiFi\""
+    echo "  $0 auto-connect"
     echo "  $0 status"
     echo "  $0 scan"
 }
@@ -396,6 +851,29 @@ case "$1" in
             exit 1
         fi
         connect_wifi "$2" "$3"
+        ;;
+    connect-saved)
+        if [ -z "$2" ]; then
+            error "Usage: $0 connect-saved <SSID>"
+            exit 1
+        fi
+        connect_saved_network "$2"
+        ;;
+    auto-connect)
+        auto_connect_saved
+        ;;
+    list-saved)
+        list_saved_networks
+        ;;
+    remove-saved)
+        if [ -z "$2" ]; then
+            error "Usage: $0 remove-saved <SSID>"
+            exit 1
+        fi
+        remove_saved_network "$2"
+        ;;
+    multi-config)
+        generate_multi_network_config
         ;;
     disconnect)
         stop_ap_mode

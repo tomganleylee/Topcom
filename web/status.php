@@ -590,7 +590,7 @@ $health_status = $health_score >= 80 ? 'excellent' : ($health_score >= 60 ? 'goo
             <div class="action-buttons">
                 <a href="index.php" class="btn btn-primary">🔧 Setup</a>
                 <a href="?refresh=1" class="btn btn-success">🔄 Refresh</a>
-                <a href="index.php?step=wifi" class="btn btn-primary">📶 WiFi Setup</a>
+                <a href="wifi.php" class="btn btn-primary">📶 WiFi Management</a>
                 <a href="index.php?step=dropbox" class="btn btn-primary">☁️ Dropbox Setup</a>
             </div>
         </div>

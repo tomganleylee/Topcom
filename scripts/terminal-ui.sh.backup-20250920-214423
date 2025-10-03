@@ -97,20 +97,17 @@ wifi_menu() {
             fi
         fi
 
-        dialog --title "WiFi Management" --menu "$status_text\n\nChoose an option:" $DIALOG_HEIGHT $DIALOG_WIDTH 13 \
+        dialog --title "WiFi Management" --menu "$status_text\n\nChoose an option:" $DIALOG_HEIGHT $DIALOG_WIDTH 10 \
             1 "Show WiFi Status" \
             2 "Scan Networks" \
             3 "Connect to Network" \
             4 "Manual Connection" \
-            5 "📱 Saved Networks" \
-            6 "🔄 Auto-Connect" \
-            7 "Start Setup Hotspot" \
-            8 "Stop Setup Hotspot" \
-            9 "Monitor Connection" \
-            10 "Reset WiFi Settings" \
-            11 "Advanced WiFi Tools" \
-            12 "Network Settings" \
-            13 "Back to Main Menu" 2>"$TEMP_DIR/wifi_choice"
+            5 "Start Setup Hotspot" \
+            6 "Stop Setup Hotspot" \
+            7 "Monitor Connection" \
+            8 "Reset WiFi Settings" \
+            9 "Advanced WiFi Tools" \
+            10 "Back to Main Menu" 2>"$TEMP_DIR/wifi_choice"
 
         if [ $? -ne 0 ]; then
             return
@@ -122,15 +119,12 @@ wifi_menu() {
             2) scan_and_connect ;;
             3) scan_and_connect ;;
             4) manual_connect ;;
-            5) saved_networks_menu ;;
-            6) auto_connect_menu ;;
-            7) start_hotspot ;;
-            8) stop_hotspot ;;
-            9) monitor_wifi ;;
-            10) reset_wifi_settings ;;
-            11) advanced_wifi_menu ;;
-            12) network_settings_menu ;;
-            13) return ;;
+            5) start_hotspot ;;
+            6) stop_hotspot ;;
+            7) monitor_wifi ;;
+            8) reset_wifi_settings ;;
+            9) advanced_wifi_menu ;;
+            10) return ;;
             *) ;;
         esac
     done
@@ -293,7 +287,7 @@ scan_and_connect() {
                 case $connect_type in
                     1)
                         # Get password with confirmation
-                        dialog --title "WiFi Password" --inputbox "Enter password for:\n$selected_network\n\n(Leave empty for no password)" 10 60 2>"$TEMP_DIR/wifi_password"
+                        dialog --title "WiFi Password" --passwordbox "Enter password for:\n$selected_network\n\n(Leave empty for no password)" 10 60 2>"$TEMP_DIR/wifi_password"
 
                         if [ $? -eq 0 ]; then
                             password=$(cat "$TEMP_DIR/wifi_password")
@@ -385,7 +379,7 @@ manual_connect() {
     # Get password if needed
     local password=""
     if [ "$manual_type" != "2" ]; then
-        dialog --title "Network Password" --inputbox "Enter password for '$ssid':\n\n(Leave empty if no password)" 10 60 2>"$TEMP_DIR/manual_password"
+        dialog --title "Network Password" --passwordbox "Enter password for '$ssid':\n\n(Leave empty if no password)" 10 60 2>"$TEMP_DIR/manual_password"
 
         if [ $? -ne 0 ]; then
             rm -f "$TEMP_DIR/manual_ssid" "$TEMP_DIR/manual_type"
@@ -571,381 +565,6 @@ reset_wifi_settings() {
     fi
 }
 
-# Saved Networks Management Menu
-saved_networks_menu() {
-    while true; do
-        # Get saved networks count
-        local saved_count="0"
-        local wifi_script=""
-        if [ -x "/opt/camera-bridge/scripts/wifi-manager.sh" ]; then
-            wifi_script="/opt/camera-bridge/scripts/wifi-manager.sh"
-        elif [ -x "$HOME/camera-bridge/scripts/wifi-manager.sh" ]; then
-            wifi_script="$HOME/camera-bridge/scripts/wifi-manager.sh"
-        fi
-
-        if [ -n "$wifi_script" ]; then
-            saved_count=$(sudo "$wifi_script" list-saved 2>/dev/null | grep -c "^[0-9]\+\." || echo "0")
-        fi
-
-        local status_text="Saved Networks: $saved_count"
-
-        dialog --title "Saved Networks" --menu "$status_text\n\nChoose an option:" $DIALOG_HEIGHT $DIALOG_WIDTH 8 \
-            1 "📋 List Saved Networks" \
-            2 "🔗 Connect to Saved Network" \
-            3 "🗑️ Remove Saved Network" \
-            4 "📊 Network Details" \
-            5 "⚙️ Auto-Connect Settings" \
-            6 "🔄 Refresh List" \
-            7 "Back to WiFi Menu" 2>"$TEMP_DIR/saved_choice"
-
-        if [ $? -ne 0 ]; then
-            return
-        fi
-
-        choice=$(cat "$TEMP_DIR/saved_choice")
-        case $choice in
-            1) list_saved_networks ;;
-            2) connect_to_saved_network ;;
-            3) remove_saved_network ;;
-            4) show_network_details ;;
-            5) auto_connect_settings ;;
-            6) continue ;;
-            7) return ;;
-            *) ;;
-        esac
-    done
-}
-
-# List saved networks
-list_saved_networks() {
-    dialog --title "Loading..." --infobox "Getting saved networks..." 5 40
-
-    # Find WiFi manager script
-    local wifi_script=""
-    if [ -x "/opt/camera-bridge/scripts/wifi-manager.sh" ]; then
-        wifi_script="/opt/camera-bridge/scripts/wifi-manager.sh"
-    elif [ -x "$HOME/camera-bridge/scripts/wifi-manager.sh" ]; then
-        wifi_script="$HOME/camera-bridge/scripts/wifi-manager.sh"
-    fi
-
-    if [ -z "$wifi_script" ]; then
-        dialog --title "Error" --msgbox "WiFi manager script not found" 8 50
-        return
-    fi
-
-    # Get saved networks with current availability
-    local networks_output=$(sudo "$wifi_script" list-saved 2>/dev/null)
-    local available_networks=$(sudo "$wifi_script" scan 2>/dev/null | tr '\n' '|')
-
-    if [ -z "$networks_output" ] || [[ "$networks_output" == *"No saved networks"* ]]; then
-        dialog --title "No Saved Networks" --msgbox "No networks have been saved yet.\n\nTo save a network:\n• Use 'Connect to Network' or 'Manual Connection'\n• Networks are automatically saved after successful connection\n\nSaved networks allow for:\n• Quick reconnection\n• Automatic connection when in range\n• Password-less switching between known networks" 12 60
-        return
-    fi
-
-    # Format output with availability status
-    local formatted_output=""
-    if [ -n "$available_networks" ]; then
-        formatted_output=$(echo "$networks_output" | while IFS= read -r line; do
-            if echo "$line" | grep -q "^[0-9]\+\."; then
-                # Extract SSID from the line
-                local ssid=$(echo "$line" | sed 's/^[0-9]\+\. [✓○] \([^(]*\) (.*/\1/' | xargs)
-                if echo "$available_networks" | grep -q "|$ssid|"; then
-                    echo "$line ⚡ Available"
-                else
-                    echo "$line ⭕ Not in range"
-                fi
-            else
-                echo "$line"
-            fi
-        done)
-    else
-        formatted_output="$networks_output
-
-⚠️ Could not scan for available networks"
-    fi
-
-    # Show in scrollable format with proper newlines
-    local display_text="$formatted_output
-
-✓ = Password saved | ○ = Open network
-🔄 = Auto-connect enabled | ⏸️ = Auto-connect disabled
-⚡ = Currently available | ⭕ = Not in range
-
-Press OK to return to menu"
-
-    dialog --title "Saved Networks" --msgbox "$display_text" 20 80
-}
-
-# Connect to a saved network
-connect_to_saved_network() {
-    dialog --title "Loading..." --infobox "Getting saved networks..." 5 40
-
-    # Find WiFi manager script
-    local wifi_script=""
-    if [ -x "/opt/camera-bridge/scripts/wifi-manager.sh" ]; then
-        wifi_script="/opt/camera-bridge/scripts/wifi-manager.sh"
-    elif [ -x "$HOME/camera-bridge/scripts/wifi-manager.sh" ]; then
-        wifi_script="$HOME/camera-bridge/scripts/wifi-manager.sh"
-    fi
-
-    if [ -z "$wifi_script" ]; then
-        dialog --title "Error" --msgbox "WiFi manager script not found" 8 50
-        return
-    fi
-
-    # Get saved networks and format for menu
-    local networks_output=$(sudo "$wifi_script" list-saved 2>/dev/null)
-
-    if [ -z "$networks_output" ] || [[ "$networks_output" == *"No saved networks"* ]]; then
-        dialog --title "No Saved Networks" --msgbox "No networks available for connection.\n\nSave networks first by using:\n• Scan Networks\n• Manual Connection" 10 50
-        return
-    fi
-
-    # Parse networks into menu format
-    local menu_options=""
-    local network_count=0
-
-    while IFS= read -r line; do
-        if echo "$line" | grep -q "^[0-9]\+\."; then
-            network_count=$((network_count + 1))
-            # Extract SSID (remove number, status icons, and priority info)
-            local ssid=$(echo "$line" | sed 's/^[0-9]\+\. [✓○] \([^(]*\) (.*/\1/' | xargs)
-            local status_icon=$(echo "$line" | sed 's/^[0-9]\+\. \([✓○]\) .*/\1/')
-            menu_options="$menu_options $network_count \"$status_icon $ssid\""
-        fi
-    done <<< "$networks_output"
-
-    if [ $network_count -eq 0 ]; then
-        dialog --title "No Networks" --msgbox "No saved networks found for connection" 8 50
-        return
-    fi
-
-    # Show network selection menu
-    eval "dialog --title \"Connect to Saved Network\" --menu \"Choose a network to connect:\" $DIALOG_HEIGHT $DIALOG_WIDTH $network_count $menu_options 2>\"$TEMP_DIR/network_choice\""
-
-    if [ $? -ne 0 ]; then
-        return
-    fi
-
-    local selected_index=$(cat "$TEMP_DIR/network_choice")
-
-    # Get the SSID for the selected network
-    local selected_ssid=""
-    local current_count=0
-    while IFS= read -r line; do
-        if echo "$line" | grep -q "^[0-9]\+\."; then
-            current_count=$((current_count + 1))
-            if [ $current_count -eq $selected_index ]; then
-                selected_ssid=$(echo "$line" | sed 's/^[0-9]\+\. [✓○] \([^(]*\) (.*/\1/' | xargs)
-                break
-            fi
-        fi
-    done <<< "$networks_output"
-
-    if [ -z "$selected_ssid" ]; then
-        dialog --title "Error" --msgbox "Failed to identify selected network" 8 50
-        return
-    fi
-
-    # Show connection progress
-    dialog --title "Connecting..." --infobox "Connecting to saved network:\n$selected_ssid\n\nPlease wait..." 7 60
-
-    # Attempt connection
-    if timeout 60 sudo "$wifi_script" connect-saved "$selected_ssid" >/dev/null 2>&1; then
-        # Verify connection
-        sleep 3
-        if current_ssid=$(iwgetid -r 2>/dev/null) && [ "$current_ssid" = "$selected_ssid" ]; then
-            local wifi_iface=$(ip link show | grep -E "wl|wlan" | awk -F': ' '{print $2}' | awk '{print $1}' | head -1)
-            local ip_addr=$(ip addr show "$wifi_iface" 2>/dev/null | grep "inet " | awk '{print $2}' | cut -d/ -f1 | head -1)
-            dialog --title "Connection Successful" --msgbox "✓ Connected to saved network: $selected_ssid\n\nConnection Details:\n• IP Address: ${ip_addr:-Obtaining...}\n• Using saved credentials\n• Network priority updated\n\nInternet connectivity should be available." 12 70
-        else
-            dialog --title "Connection Issues" --msgbox "Connection completed but verification failed.\n\nNetwork: $selected_ssid\n\nThis might indicate:\n• Weak signal or interference\n• Network configuration changes\n• Temporary network issues\n\nTry:\n• Check WiFi Status in a moment\n• Move closer to the access point\n• Remove and re-add the network if issues persist" 16 70
-        fi
-    else
-        dialog --title "Connection Failed" --msgbox "Failed to connect to saved network:\n$selected_ssid\n\nPossible causes:\n• Network is out of range\n• Network credentials changed\n• Router/AP issues\n• Interface problems\n\nSuggestions:\n• Check network availability with 'Scan Networks'\n• Remove and re-add the network if credentials changed\n• Try manual connection to test\n• Check WiFi Status for interface issues" 18 70
-    fi
-
-    # Cleanup
-    rm -f "$TEMP_DIR/network_choice"
-}
-
-# Remove a saved network
-remove_saved_network() {
-    dialog --title "Loading..." --infobox "Getting saved networks..." 5 40
-
-    # Find WiFi manager script
-    local wifi_script=""
-    if [ -x "/opt/camera-bridge/scripts/wifi-manager.sh" ]; then
-        wifi_script="/opt/camera-bridge/scripts/wifi-manager.sh"
-    elif [ -x "$HOME/camera-bridge/scripts/wifi-manager.sh" ]; then
-        wifi_script="$HOME/camera-bridge/scripts/wifi-manager.sh"
-    fi
-
-    if [ -z "$wifi_script" ]; then
-        dialog --title "Error" --msgbox "WiFi manager script not found" 8 50
-        return
-    fi
-
-    # Get saved networks
-    local networks_output=$(sudo "$wifi_script" list-saved 2>/dev/null)
-
-    if [ -z "$networks_output" ] || [[ "$networks_output" == *"No saved networks"* ]]; then
-        dialog --title "No Saved Networks" --msgbox "No saved networks to remove." 8 50
-        return
-    fi
-
-    # Parse networks into menu format
-    local menu_options=""
-    local network_count=0
-
-    while IFS= read -r line; do
-        if echo "$line" | grep -q "^[0-9]\+\."; then
-            network_count=$((network_count + 1))
-            local ssid=$(echo "$line" | sed 's/^[0-9]\+\. [✓○] \([^(]*\) (.*/\1/' | xargs)
-            local status_icon=$(echo "$line" | sed 's/^[0-9]\+\. \([✓○]\) .*/\1/')
-            menu_options="$menu_options $network_count \"$status_icon $ssid\""
-        fi
-    done <<< "$networks_output"
-
-    if [ $network_count -eq 0 ]; then
-        dialog --title "No Networks" --msgbox "No saved networks found" 8 50
-        return
-    fi
-
-    # Add cancel option
-    menu_options="$menu_options $((network_count + 1)) \"❌ Cancel\""
-
-    # Show network selection menu
-    eval "dialog --title \"Remove Saved Network\" --menu \"Choose a network to remove:\" $DIALOG_HEIGHT $DIALOG_WIDTH $((network_count + 1)) $menu_options 2>\"$TEMP_DIR/remove_choice\""
-
-    if [ $? -ne 0 ]; then
-        return
-    fi
-
-    local selected_index=$(cat "$TEMP_DIR/remove_choice")
-
-    # Check if cancel was selected
-    if [ $selected_index -eq $((network_count + 1)) ]; then
-        rm -f "$TEMP_DIR/remove_choice"
-        return
-    fi
-
-    # Get the SSID for the selected network
-    local selected_ssid=""
-    local current_count=0
-    while IFS= read -r line; do
-        if echo "$line" | grep -q "^[0-9]\+\."; then
-            current_count=$((current_count + 1))
-            if [ $current_count -eq $selected_index ]; then
-                selected_ssid=$(echo "$line" | sed 's/^[0-9]\+\. [✓○] \([^(]*\) (.*/\1/' | xargs)
-                break
-            fi
-        fi
-    done <<< "$networks_output"
-
-    if [ -z "$selected_ssid" ]; then
-        dialog --title "Error" --msgbox "Failed to identify selected network" 8 50
-        rm -f "$TEMP_DIR/remove_choice"
-        return
-    fi
-
-    # Confirm removal
-    if dialog --title "Confirm Removal" --yesno "Remove saved network:\n\n$selected_ssid\n\nThis will:\n• Delete saved credentials\n• Require re-entering password for future connections\n• Remove from auto-connect list\n\nThis action cannot be undone.\n\nAre you sure?" 14 60; then
-
-        dialog --title "Removing..." --infobox "Removing saved network:\n$selected_ssid" 6 50
-
-        if sudo "$wifi_script" remove-saved "$selected_ssid" >/dev/null 2>&1; then
-            dialog --title "Network Removed" --msgbox "✓ Successfully removed:\n$selected_ssid\n\nThe network has been deleted from saved networks.\nYou will need to enter credentials again to reconnect." 10 60
-        else
-            dialog --title "Removal Failed" --msgbox "Failed to remove network:\n$selected_ssid\n\nThe network may not exist in saved networks or there was a system error." 10 60
-        fi
-    fi
-
-    # Cleanup
-    rm -f "$TEMP_DIR/remove_choice"
-}
-
-# Auto-connect menu
-auto_connect_menu() {
-    dialog --title "Auto-Connect" --infobox "Checking auto-connect status..." 5 40
-
-    # Find WiFi manager script
-    local wifi_script=""
-    if [ -x "/opt/camera-bridge/scripts/wifi-manager.sh" ]; then
-        wifi_script="/opt/camera-bridge/scripts/wifi-manager.sh"
-    elif [ -x "$HOME/camera-bridge/scripts/wifi-manager.sh" ]; then
-        wifi_script="$HOME/camera-bridge/scripts/wifi-manager.sh"
-    fi
-
-    if [ -z "$wifi_script" ]; then
-        dialog --title "Error" --msgbox "WiFi manager script not found" 8 50
-        return
-    fi
-
-    dialog --title "Auto-Connect" --menu "Choose an option:" $DIALOG_HEIGHT $DIALOG_WIDTH 6 \
-        1 "🔄 Try Auto-Connect Now" \
-        2 "📋 View Auto-Connect Status" \
-        3 "⚙️ Auto-Connect Settings" \
-        4 "📊 Connection Priority" \
-        5 "Back to Saved Networks" 2>"$TEMP_DIR/auto_choice"
-
-    if [ $? -ne 0 ]; then
-        return
-    fi
-
-    choice=$(cat "$TEMP_DIR/auto_choice")
-    case $choice in
-        1)
-            dialog --title "Auto-Connecting..." --infobox "Attempting to auto-connect to saved networks...\n\nScanning for available networks..." 7 60
-
-            if sudo "$wifi_script" auto-connect >/dev/null 2>&1; then
-                sleep 2
-                if current_ssid=$(iwgetid -r 2>/dev/null) && [ -n "$current_ssid" ]; then
-                    dialog --title "Auto-Connect Success" --msgbox "✓ Auto-connected successfully!\n\nConnected to: $current_ssid\n\nAuto-connect found and connected to a saved network that was in range." 10 60
-                else
-                    dialog --title "Auto-Connect Issues" --msgbox "Auto-connect completed but connection verification failed.\n\nThis might indicate:\n• Very weak signal\n• Network authentication issues\n• Brief connection that dropped\n\nCheck WiFi Status for current connection state." 12 60
-                fi
-            else
-                dialog --title "Auto-Connect Failed" --msgbox "Auto-connect could not establish a connection.\n\nPossible reasons:\n• No saved networks in range\n• All saved networks have connectivity issues\n• WiFi hardware problems\n• All available networks require updated credentials\n\nTry:\n• Manual connection to test specific networks\n• Check that saved networks are broadcasting\n• Verify WiFi interface status" 16 60
-            fi
-            ;;
-        2)
-            local status_info=$(sudo "$wifi_script" list-saved 2>/dev/null)
-            if [ -n "$status_info" ] && [[ "$status_info" != *"No saved networks"* ]]; then
-                dialog --title "Auto-Connect Status" --msgbox "Auto-Connect Status:\n\n$status_info\n\n🔄 = Auto-connect enabled for this network\n⏸️ = Auto-connect disabled for this network\n\nNetworks with auto-connect enabled will be tried automatically when:\n• System starts up\n• WiFi connection is lost\n• Manual auto-connect is triggered" 18 70
-            else
-                dialog --title "No Auto-Connect Networks" --msgbox "No networks configured for auto-connect.\n\nTo enable auto-connect:\n• Connect to networks normally\n• Networks are automatically saved with auto-connect enabled\n• Use the priority settings to control connection order" 12 60
-            fi
-            ;;
-        3)
-            dialog --title "Auto-Connect Settings" --msgbox "Auto-connect settings are managed per network.\n\nTo modify auto-connect behavior:\n• All newly connected networks have auto-connect enabled by default\n• Individual network auto-connect status is managed through the network details\n• Connection priority determines which network is preferred when multiple are available\n\nFor system-wide auto-connect control, this feature will be added in a future update." 14 70
-            ;;
-        4)
-            dialog --title "Connection Priority" --msgbox "Network Priority Information:\n\n• Higher priority numbers = preferred networks\n• Networks with passwords typically get priority 10\n• Open networks typically get priority 5\n• Priority is automatically assigned based on network type\n• When multiple saved networks are available, highest priority connects first\n\nPriority modification features will be added in future updates." 14 70
-            ;;
-        5)
-            return
-            ;;
-    esac
-
-    rm -f "$TEMP_DIR/auto_choice"
-}
-
-# Network details and settings (placeholder for future expansion)
-show_network_details() {
-    dialog --title "Network Details" --msgbox "Network details feature coming soon!\n\nThis will show:\n• Signal strength for saved networks\n• Last connection time\n• Connection history\n• Security information\n• Auto-connect settings per network" 12 60
-}
-
-# Auto-connect settings (placeholder for future expansion)
-auto_connect_settings() {
-    dialog --title "Auto-Connect Settings" --msgbox "Auto-connect settings coming soon!\n\nThis will allow:\n• Enable/disable auto-connect globally\n• Set connection retry attempts\n• Configure connection timeouts\n• Manage network priority\n• Set preferred connection order" 12 60
-}
-
-# Network settings menu (placeholder for future expansion)
-network_settings_menu() {
-    dialog --title "Network Settings" --msgbox "Advanced network settings coming soon!\n\nThis will include:\n• WiFi power management\n• Connection profiles\n• Advanced security settings\n• Network diagnostics\n• Interface configuration" 12 60
-}
-
 # Dropbox configuration menu
 dropbox_menu() {
     while true; do
@@ -983,166 +602,45 @@ dropbox_menu() {
 }
 
 configure_dropbox() {
-    # Check if already configured
-    local config_status="Not Configured"
-    local token_type=""
+    # Show detailed setup instructions
+    dialog --title "Dropbox Setup Instructions" --msgbox "STEP-BY-STEP DROPBOX SETUP:\n\n1. Open https://dropbox.com/developers/apps in your browser\n2. Click 'Create app'\n3. Choose 'Scoped access'\n4. Choose 'App folder' (recommended) or 'Full Dropbox'\n5. Name your app (e.g., 'CameraBridge')\n6. Click 'Create app'\n7. In app settings, go to 'Permissions' tab\n8. Enable: files.metadata.read, files.content.read, files.content.write\n9. Go to 'Settings' tab\n10. Generate access token\n11. Copy the long token string\n\nPress OK when you have your token ready." 18 80
 
-    if [ -f "/home/camerabridge/.config/rclone/rclone.conf" ]; then
-        config_status="Configured"
-        if grep -q "refresh_token" /home/camerabridge/.config/rclone/rclone.conf 2>/dev/null; then
-            token_type=" (OAuth2 with auto-refresh)"
-        else
-            token_type=" (Legacy token - may expire)"
-        fi
-    fi
-
-    # Show current status and menu
-    dialog --title "Dropbox Configuration" --menu "Status: ${config_status}${token_type}\n\nChoose configuration method:" 16 70 5 \
-        1 "OAuth2 Setup (Auto-Refresh Token)" \
-        2 "Legacy Token (Manual Entry)" \
+    # Configuration method selection
+    dialog --title "Configuration Method" --menu "How would you like to configure Dropbox?" 14 70 4 \
+        1 "Enter Access Token Manually" \
+        2 "QR Code + Web Entry (Recommended)" \
         3 "Reconfigure Existing Setup" \
-        4 "Test Current Configuration" \
-        5 "Cancel" 2>"$TEMP_DIR/config_method"
+        4 "Cancel" 2>"$TEMP_DIR/config_method"
 
     if [ $? -ne 0 ]; then
         return
     fi
 
     config_method=$(cat "$TEMP_DIR/config_method")
-
     case $config_method in
-        1)
-            # OAuth2 Setup
-            configure_dropbox_oauth2
-            ;;
-        2)
-            # Legacy token entry
-            configure_dropbox_manual
-            ;;
-        3)
-            # Reconfigure
-            if dialog --title "Reconfigure Warning" --yesno "This will replace your existing Dropbox configuration.\n\nAll current settings will be lost.\n\nContinue?" 10 60; then
-                sudo rm -f /home/camerabridge/.config/rclone/rclone.conf
-                configure_dropbox_oauth2
-            fi
-            ;;
         4)
-            # Test configuration
-            dialog --title "Testing..." --infobox "Testing Dropbox connection...\nPlease wait..." 5 45
-            if sudo -u camerabridge rclone lsd dropbox: >/dev/null 2>&1; then
-                dialog --title "Test Result" --msgbox "✓ Connection successful!\n\nDropbox is working properly." 8 50
-            else
-                dialog --title "Test Result" --msgbox "✗ Connection failed!\n\nPlease reconfigure Dropbox." 8 50
-            fi
-            ;;
-        5)
             return
             ;;
+        3)
+            if dialog --title "Reconfigure Warning" --yesno "This will replace your existing Dropbox configuration.\n\nAll current settings will be lost.\n\nContinue?" 10 60; then
+                # Continue to manual token entry
+                configure_dropbox_manual
+            else
+                return
+            fi
+            ;;
+        2)
+            # QR Code + Web Entry
+            configure_dropbox_qr
+            ;;
+        1)
+            # Manual token entry
+            configure_dropbox_manual
+            ;;
     esac
-}
 
-# OAuth2 Configuration Function
-configure_dropbox_oauth2() {
-    clear
-    dialog --title "OAuth2 Setup - Automatic Token Refresh" --msgbox "DROPBOX OAUTH2 SETUP\n\nThis method provides:\n✓ Automatic token refresh\n✓ Never expires\n✓ Works with Dropbox Business\n✓ One-time setup\n\nYou'll need access to a computer with a web browser.\n\nPress OK to see instructions." 15 65
-
-    # Instructions
-    dialog --title "Step 1: Get OAuth2 Token" --msgbox "ON A COMPUTER WITH WEB BROWSER:\n\n1. Open terminal/command prompt\n\n2. Run this command:\n   rclone authorize dropbox\n\n3. Browser will open automatically\n\n4. Log in to Dropbox (personal or business)\n\n5. Click 'Allow' to authorize\n\n6. Copy the ENTIRE token that appears\n   (everything from { to })\n\nThe token looks like:\n{\"access_token\":\"...\",\"refresh_token\":\"...\",\"expiry\":\"...\"}\n\nPress OK when ready to paste." 20 72
-
-    # Get token
-    local token_file="$TEMP_DIR/oauth_token"
-    dialog --title "Step 2: Enter OAuth2 Token" --inputbox "Paste the complete OAuth2 token here:\n\nIMPORTANT: Include EVERYTHING from { to }" 12 75 2>"$token_file"
-
-    if [ ! -s "$token_file" ]; then
-        dialog --title "Cancelled" --msgbox "No token provided. Setup cancelled." 7 45
-        return 1
-    fi
-
-    local token=$(cat "$token_file")
-
-    # Validate token format
-    if [[ "$token" != *"{"* ]] || [[ "$token" != *"}"* ]]; then
-        dialog --title "Invalid Format" --msgbox "ERROR: Token must include the curly braces {}!\n\nMake sure to copy the ENTIRE output from rclone authorize." 9 65
-        return 1
-    fi
-
-    if [[ "$token" != *"access_token"* ]]; then
-        dialog --title "Invalid Token" --msgbox "ERROR: This doesn't look like a valid OAuth2 token.\n\nMake sure you used: rclone authorize dropbox" 8 60
-        return 1
-    fi
-
-    # Check for refresh token
-    local has_refresh=0
-    if [[ "$token" == *"refresh_token"* ]]; then
-        has_refresh=1
-        dialog --title "✓ Token Valid" --infobox "✓ OAuth2 token detected\n✓ Refresh token found\n✓ Auto-renewal will work!\n\nConfiguring..." 8 50
-        sleep 2
-    else
-        dialog --title "⚠ Warning" --msgbox "Token is missing refresh_token!\n\nThis token will expire and need manual renewal.\n\nFor best results, use: rclone authorize dropbox" 10 65
-    fi
-
-    # Setup configuration
-    dialog --title "Configuring..." --infobox "Installing Dropbox configuration...\nPlease wait..." 5 45
-
-    # Ensure user exists
-    if ! id "camerabridge" >/dev/null 2>&1; then
-        sudo useradd -r -s /bin/false -d /home/camerabridge camerabridge 2>/dev/null || true
-    fi
-
-    # Create config directory
-    sudo mkdir -p /home/camerabridge/.config/rclone
-
-    # Write config
-    cat > "$TEMP_DIR/rclone.conf" << EOFCONF
-[dropbox]
-type = dropbox
-token = $token
-EOFCONF
-
-    # Install config
-    sudo cp "$TEMP_DIR/rclone.conf" /home/camerabridge/.config/rclone/rclone.conf
-    sudo chown -R camerabridge:camerabridge /home/camerabridge/.config
-    sudo chmod 700 /home/camerabridge/.config/rclone
-    sudo chmod 600 /home/camerabridge/.config/rclone/rclone.conf
-
-    # Test connection
-    dialog --title "Testing..." --infobox "Testing Dropbox connection...\nThis may take up to 30 seconds..." 5 50
-
-    if timeout 45 sudo -u camerabridge rclone lsd dropbox: >/dev/null 2>&1; then
-        # Success
-        local account_info=$(sudo -u camerabridge rclone about dropbox: 2>/dev/null | grep -E "(Used:|Free:|Total:)" | head -3)
-
-        if [ $has_refresh -eq 1 ]; then
-            dialog --title "✓ SUCCESS - OAuth2 Configured!" --msgbox "DROPBOX OAUTH2 SETUP COMPLETE!\n\n$account_info\n\n✓ OAuth2 token installed\n✓ Refresh token active\n✓ Automatic renewal enabled\n✓ Will never expire!\n\nPhotos will sync to:\ndropbox:Camera-Photos/" 17 65
-        else
-            dialog --title "✓ Configured" --msgbox "DROPBOX CONFIGURED\n\n$account_info\n\n⚠ Legacy token (no refresh)\n⚠ May expire eventually\n\nPhotos will sync to:\ndropbox:Camera-Photos/" 15 65
-        fi
-
-        # Create destination folder
-        sudo -u camerabridge rclone mkdir dropbox:Camera-Photos 2>/dev/null || true
-
-        # Restart service if running
-        if systemctl is-active --quiet camera-bridge; then
-            dialog --title "Service" --infobox "Restarting Camera Bridge service..." 5 45
-            sudo systemctl restart camera-bridge
-            sleep 2
-        fi
-
-        rm -f "$token_file"
-        return 0
-    else
-        dialog --title "Connection Failed" --msgbox "Failed to connect to Dropbox!\n\nPossible issues:\n• Invalid token\n• Network problems\n• Firewall blocking\n\nTry getting a fresh token with:\nrclone authorize dropbox" 12 60
-
-        # Offer to keep config
-        if dialog --title "Keep Config?" --yesno "Keep configuration for retry later?" 7 45; then
-            dialog --title "Saved" --msgbox "Configuration saved.\nTry testing from the Dropbox menu." 7 50
-        else
-            sudo rm -f /home/camerabridge/.config/rclone/rclone.conf
-        fi
-
-        rm -f "$token_file"
-        return 1
-    fi
+    # Cleanup
+    rm -f "$TEMP_DIR/config_method"
 }
 
 configure_dropbox_manual() {
@@ -2365,7 +1863,7 @@ manage_smb_service() {
             fi
             ;;
         8)
-            dialog --title "Reset SMB Password" --inputbox "Enter new password for SMB user 'camera':" 10 50 2>"$TEMP_DIR/new_smb_password"
+            dialog --title "Reset SMB Password" --passwordbox "Enter new password for SMB user 'camera':" 10 50 2>"$TEMP_DIR/new_smb_password"
             if [ $? -eq 0 ]; then
                 new_password=$(cat "$TEMP_DIR/new_smb_password")
                 if [ -n "$new_password" ]; then
@@ -2510,820 +2008,55 @@ show_all_services_status() {
 }
 
 # File management functions
-# File Management Configuration
-PHOTO_DIR="/srv/samba/camera-share"
-USB_MOUNT_BASE="/media"
-TEMP_SELECTION_FILE="/tmp/camera-bridge-selected-files"
-MAX_FILES_PER_PAGE=100
-
 file_management() {
-    while true; do
-        # Get quick stats
-        local file_count=0
-        local total_size="0B"
-        if [ -d "$PHOTO_DIR" ]; then
-            file_count=$(find "$PHOTO_DIR" -type f 2>/dev/null | wc -l)
-            total_size=$(du -sh "$PHOTO_DIR" 2>/dev/null | cut -f1 || echo "0B")
-        fi
-
-        local status_text="Storage: $file_count files ($total_size)"
-
-        dialog --title "File Management" --menu "$status_text\n\nChoose an option:" $DIALOG_HEIGHT $DIALOG_WIDTH 10 \
-            1 "📁 Terminal File Browser" \
-            2 "🖼️  GUI File Browser" \
-            3 "💾 Quick USB Copy" \
-            4 "🔍 File Statistics" \
-            5 "🗑️  File Cleanup" \
-            6 "📂 Open in Shell" \
-            7 "💿 USB Management" \
-            8 "Back to Main Menu" 2>"$TEMP_DIR/file_choice"
-
-        if [ $? -ne 0 ]; then
-            return
-        fi
-
-        choice=$(cat "$TEMP_DIR/file_choice")
-        case $choice in
-            1) terminal_file_browser ;;
-            2) gui_file_browser ;;
-            3) quick_usb_copy ;;
-            4) file_statistics ;;
-            5) file_cleanup ;;
-            6) open_in_shell ;;
-            7) usb_management ;;
-            8) return ;;
-            *) ;;
-        esac
-    done
-}
-
-# USB Detection and Mounting Functions
-detect_usb_devices() {
-    local usb_devices=""
-    local device_count=0
-
-    # Find all removable block devices
-    for device in /sys/block/sd*; do
-        if [ -f "$device/removable" ] && [ "$(cat "$device/removable")" = "1" ]; then
-            local dev_name=$(basename "$device")
-            local dev_path="/dev/$dev_name"
-
-            # Get device info
-            local model=$(cat "$device/device/model" 2>/dev/null | xargs || echo "USB Drive")
-            local size=$(lsblk -no SIZE "$dev_path" 2>/dev/null | head -1 || echo "Unknown")
-
-            # Check for partitions
-            for part in "$device"/"$dev_name"*; do
-                if [ -d "$part" ] && [[ "$(basename "$part")" != "$dev_name" ]]; then
-                    local part_name=$(basename "$part")
-                    local part_path="/dev/$part_name"
-                    local mount_point=$(lsblk -no MOUNTPOINT "$part_path" 2>/dev/null)
-                    local fs_type=$(lsblk -no FSTYPE "$part_path" 2>/dev/null)
-
-                    if [ -z "$mount_point" ]; then
-                        mount_point="<not mounted>"
-                    fi
-
-                    # Get free space if mounted
-                    local free_space="N/A"
-                    if [ "$mount_point" != "<not mounted>" ] && [ -d "$mount_point" ]; then
-                        free_space=$(df -h "$mount_point" 2>/dev/null | awk 'NR==2{print $4}')
-                    fi
-
-                    device_count=$((device_count + 1))
-                    usb_devices="${usb_devices}${device_count}|$part_path|$model|$size|$mount_point|$free_space|$fs_type\n"
-                fi
-            done
-        fi
-    done
-
-    if [ -z "$usb_devices" ]; then
-        echo "NONE"
-    else
-        echo -e "$usb_devices"
-    fi
-}
-
-auto_mount_usb() {
-    local device="$1"
-    local device_name=$(basename "$device")
-
-    # Check if already mounted
-    local existing_mount=$(lsblk -no MOUNTPOINT "$device" 2>/dev/null)
-    if [ -n "$existing_mount" ]; then
-        echo "$existing_mount"
-        return 0
-    fi
-
-    # Create mount point
-    local mount_point="$USB_MOUNT_BASE/usb_${device_name}"
-    sudo mkdir -p "$mount_point" 2>/dev/null
-
-    # Try to mount
-    if sudo mount "$device" "$mount_point" 2>/dev/null; then
-        echo "$mount_point"
-        return 0
-    else
-        sudo rmdir "$mount_point" 2>/dev/null
-        return 1
-    fi
-}
-
-# Terminal File Browser with Date Filtering
-terminal_file_browser() {
-    if [ ! -d "$PHOTO_DIR" ]; then
-        dialog --title "Error" --msgbox "Photo directory not found:\n$PHOTO_DIR" 8 60
-        return
-    fi
-
-    # Step 1: Date filter selection
-    dialog --title "Date Filter" --menu "How do you want to filter files?" 18 60 10 \
-        1 "All Files" \
-        2 "Today" \
-        3 "Yesterday" \
-        4 "Last 7 Days" \
-        5 "Last 30 Days" \
-        6 "This Month" \
-        7 "Last Month" \
-        8 "Custom Date Range" \
-        9 "Cancel" 2>"$TEMP_DIR/date_filter_choice"
+    dialog --title "File Management" --menu "Choose an option:" $DIALOG_HEIGHT $DIALOG_WIDTH 8 \
+        1 "Browse Camera Share" \
+        2 "Check Disk Space" \
+        3 "Recent Photos" \
+        4 "Cleanup Old Files" \
+        5 "Backup Configuration" \
+        6 "Import Configuration" \
+        7 "Back to Main Menu" 2>"$TEMP_DIR/file_choice"
 
     if [ $? -ne 0 ]; then
         return
     fi
 
-    local date_choice=$(cat "$TEMP_DIR/date_filter_choice")
-    if [ "$date_choice" = "9" ]; then
-        return
-    fi
-
-    # Build find command based on date filter
-    local find_cmd="find \"$PHOTO_DIR\" -type f"
-    local date_desc=""
-
-    case $date_choice in
-        1)
-            date_desc="All Files"
-            ;;
-        2)
-            find_cmd="$find_cmd -mtime 0"
-            date_desc="Today"
-            ;;
-        3)
-            find_cmd="$find_cmd -mtime 1"
-            date_desc="Yesterday"
-            ;;
-        4)
-            find_cmd="$find_cmd -mtime -7"
-            date_desc="Last 7 Days"
-            ;;
-        5)
-            find_cmd="$find_cmd -mtime -30"
-            date_desc="Last 30 Days"
-            ;;
-        6)
-            local month_start=$(date +%Y-%m-01)
-            find_cmd="$find_cmd -newermt \"$month_start\""
-            date_desc="This Month"
-            ;;
-        7)
-            local last_month_start=$(date -d "last month" +%Y-%m-01)
-            local this_month_start=$(date +%Y-%m-01)
-            find_cmd="$find_cmd -newermt \"$last_month_start\" ! -newermt \"$this_month_start\""
-            date_desc="Last Month"
-            ;;
-        8)
-            # Custom date range - use calendar
-            dialog --title "Custom Date Range" --msgbox "Custom date range picker coming soon!\n\nFor now, using Last 30 Days." 8 50
-            find_cmd="$find_cmd -mtime -30"
-            date_desc="Last 30 Days"
-            ;;
-    esac
-
-    # Execute find and get files
-    dialog --title "Scanning..." --infobox "Scanning for files...\n\nFilter: $date_desc\n\nPlease wait..." 7 50
-
-    local files=$(eval "$find_cmd 2>/dev/null | sort -r")
-    local file_count=$(echo "$files" | grep -c '^' 2>/dev/null || echo "0")
-
-    if [ -z "$files" ] || [ "$file_count" -eq 0 ]; then
-        dialog --title "No Files Found" --msgbox "No files match the selected date filter:\n\n$date_desc" 8 50
-        return
-    fi
-
-    # Step 2: File selection with multi-select
-    show_file_selector "$files" "$date_desc" "$file_count"
-}
-
-show_file_selector() {
-    local files="$1"
-    local date_desc="$2"
-    local file_count="$3"
-
-    # Store files in array for easier access
-    echo "$files" > "$TEMP_DIR/files_array"
-
-    # Build checklist options
-    rm -f "$TEMP_DIR/file_list_options"
-    local index=1
-
-    while IFS= read -r file; do
-        if [ -n "$file" ] && [ -f "$file" ]; then
-            local filename=$(basename "$file")
-            local filesize=$(du -h "$file" 2>/dev/null | cut -f1)
-            local filedate=$(stat -c %y "$file" 2>/dev/null | cut -d' ' -f1)
-
-            if [ $index -le $MAX_FILES_PER_PAGE ]; then
-                echo "$index \"$filename\" \"$filesize $filedate\" off" >> "$TEMP_DIR/file_list_options"
-            fi
-            index=$((index + 1))
-        fi
-    done < "$TEMP_DIR/files_array"
-
-    if [ $file_count -gt $MAX_FILES_PER_PAGE ]; then
-        local showing_text="Showing first $MAX_FILES_PER_PAGE of $file_count files"
-    else
-        local showing_text="$file_count files found"
-    fi
-
-    if [ ! -s "$TEMP_DIR/file_list_options" ]; then
-        dialog --title "Error" --msgbox "No valid files found to display." 6 50
-        return
-    fi
-
-    # Show checklist for file selection
-    eval "dialog --title \"Select Files ($date_desc)\" --checklist \"$showing_text\nUse SPACE to select, ENTER to confirm\" 20 78 12 $(cat "$TEMP_DIR/file_list_options") 2>\"$TEMP_DIR/selected_files\""
-
-    local dialog_result=$?
-
-    if [ $dialog_result -ne 0 ]; then
-        return
-    fi
-
-    # Get selected file indices
-    local selected_indices=$(cat "$TEMP_DIR/selected_files" 2>/dev/null | tr -d '"')
-
-    if [ -z "$selected_indices" ]; then
-        dialog --title "No Selection" --msgbox "No files were selected." 6 40
-        return
-    fi
-
-    # Build list of selected files
-    rm -f "$TEMP_SELECTION_FILE"
-    for idx in $selected_indices; do
-        sed -n "${idx}p" "$TEMP_DIR/files_array" >> "$TEMP_SELECTION_FILE"
-    done
-
-    local selected_count=$(wc -l < "$TEMP_SELECTION_FILE" 2>/dev/null || echo "0")
-
-    if [ "$selected_count" -eq 0 ]; then
-        dialog --title "Error" --msgbox "Failed to process selected files." 6 50
-        return
-    fi
-
-    local selected_size=$(du -ch $(cat "$TEMP_SELECTION_FILE") 2>/dev/null | tail -1 | cut -f1 || echo "unknown")
-
-    # Step 3: Choose action for selected files
-    dialog --title "File Actions" --menu "Selected: $selected_count files ($selected_size)\n\nWhat would you like to do?" 12 60 4 \
-        1 "Copy to USB" \
-        2 "View File List" \
-        3 "Delete Selected" \
-        4 "Cancel" 2>"$TEMP_DIR/file_action"
-
-    if [ $? -ne 0 ]; then
-        return
-    fi
-
-    local action=$(cat "$TEMP_DIR/file_action" 2>/dev/null)
-
-    case $action in
-        1) copy_selected_to_usb "$selected_count" "$selected_size" ;;
-        2) view_selected_files ;;
-        3) delete_selected_files "$selected_count" ;;
-        4) return ;;
-    esac
-}
-
-copy_selected_to_usb() {
-    local file_count="$1"
-    local total_size="$2"
-
-    # Detect USB devices
-    dialog --title "USB Detection" --infobox "Detecting USB devices...\n\nPlease wait..." 6 50
-    sleep 1
-
-    local usb_list=$(detect_usb_devices)
-
-    if [ "$usb_list" = "NONE" ]; then
-        dialog --title "No USB Devices" --msgbox "No USB devices detected.\n\nPlease:\n• Insert a USB drive\n• Wait a few seconds\n• Try again" 10 50
-        return
-    fi
-
-    # Build USB selection menu
-    local usb_menu_options=""
-    local usb_count=0
-
-    echo -e "$usb_list" | while IFS='|' read -r index device model size mount free fs; do
-        if [ -n "$device" ]; then
-            usb_count=$((usb_count + 1))
-            local status="Not mounted"
-            if [ "$mount" != "<not mounted>" ]; then
-                status="Mounted: $mount (Free: $free)"
-            fi
-            echo "$index \"$model ($size)\" \"$status\""
-        fi
-    done > "$TEMP_DIR/usb_menu_options"
-
-    eval "dialog --title \"Select USB Device\" --menu \"Copy $file_count files ($total_size) to USB\n\nChoose destination:\" 15 70 8 $(cat "$TEMP_DIR/usb_menu_options") 2>\"$TEMP_DIR/usb_choice\""
-
-    if [ $? -ne 0 ]; then
-        return
-    fi
-
-    local usb_index=$(cat "$TEMP_DIR/usb_choice")
-
-    # Get selected USB device details
-    local usb_info=$(echo -e "$usb_list" | grep "^$usb_index|")
-    local usb_device=$(echo "$usb_info" | cut -d'|' -f2)
-    local usb_mount=$(echo "$usb_info" | cut -d'|' -f5)
-
-    # Mount if needed
-    if [ "$usb_mount" = "<not mounted>" ]; then
-        dialog --title "Mounting USB" --infobox "Mounting USB device...\n\n$usb_device" 6 50
-        usb_mount=$(auto_mount_usb "$usb_device")
-        if [ $? -ne 0 ]; then
-            dialog --title "Mount Failed" --msgbox "Failed to mount USB device:\n$usb_device\n\nPlease check:\n• USB is not write-protected\n• Filesystem is supported\n• Device is not damaged" 12 60
-            return
-        fi
-    fi
-
-    # Verify mount and space
-    if [ ! -d "$usb_mount" ]; then
-        dialog --title "Error" --msgbox "USB mount point not accessible:\n$usb_mount" 8 60
-        return
-    fi
-
-    # Copy files with progress
-    copy_files_with_progress "$usb_mount" "$file_count" "$total_size"
-}
-
-copy_files_with_progress() {
-    local destination="$1"
-    local file_count="$2"
-    local total_size="$3"
-
-    # Create destination directory
-    local dest_dir="$destination/CameraBridge-$(date +%Y%m%d_%H%M%S)"
-    sudo mkdir -p "$dest_dir" 2>/dev/null
-
-    if [ ! -d "$dest_dir" ]; then
-        dialog --title "Error" --msgbox "Failed to create destination directory:\n$dest_dir" 8 60
-        return
-    fi
-
-    # Show progress during copy
-    (
-        local copied=0
-        local total=$(wc -l < "$TEMP_SELECTION_FILE")
-
-        while IFS= read -r file; do
-            if [ -f "$file" ]; then
-                # Calculate progress percentage
-                local percent=$((copied * 100 / total))
-                echo "XXX"
-                echo "$percent"
-                echo "Copying: $(basename "$file")\n\nFile $((copied + 1)) of $total"
-                echo "XXX"
-
-                # Copy file
-                sudo cp "$file" "$dest_dir/" 2>/dev/null
-
-                copied=$((copied + 1))
-            fi
-        done < "$TEMP_SELECTION_FILE"
-
-        echo "XXX"
-        echo "100"
-        echo "Copy complete!\n\nVerifying files..."
-        echo "XXX"
-        sleep 2
-
-    ) | dialog --title "Copying to USB" --gauge "Preparing to copy $file_count files..." 10 70 0
-
-    # Verify copy
-    local copied_count=$(find "$dest_dir" -type f 2>/dev/null | wc -l)
-
-    if [ "$copied_count" -eq "$file_count" ]; then
-        dialog --title "Copy Successful" --msgbox "✓ Successfully copied $file_count files!\n\nDestination:\n$dest_dir\n\nYou can safely remove the USB drive after clicking OK." 12 70
-    else
-        dialog --title "Copy Incomplete" --msgbox "⚠️ Copy completed with issues.\n\nExpected: $file_count files\nCopied: $copied_count files\n\nSome files may not have been copied.\nPlease check the destination directory." 12 70
-    fi
-
-    # Cleanup
-    rm -f "$TEMP_SELECTION_FILE"
-}
-
-view_selected_files() {
-    if [ ! -f "$TEMP_SELECTION_FILE" ]; then
-        dialog --title "Error" --msgbox "No files selected" 6 40
-        return
-    fi
-
-    local file_list=$(cat "$TEMP_SELECTION_FILE" | sed 's|.*/||' | nl -w2 -s'. ')
-    local file_count=$(wc -l < "$TEMP_SELECTION_FILE")
-
-    dialog --title "Selected Files ($file_count)" --msgbox "$file_list" 20 70
-}
-
-delete_selected_files() {
-    local file_count="$1"
-
-    if ! dialog --title "Confirm Deletion" --yesno "⚠️  WARNING: Delete $file_count files?\n\nThis action CANNOT be undone!\n\nFiles will be permanently deleted from:\n$PHOTO_DIR\n\nAre you absolutely sure?" 12 60; then
-        return
-    fi
-
-    # Double confirmation
-    if ! dialog --title "Final Confirmation" --yesno "Last chance to cancel!\n\nDelete $file_count files permanently?" 8 50; then
-        return
-    fi
-
-    # Delete files with progress
-    (
-        local deleted=0
-        local total=$(wc -l < "$TEMP_SELECTION_FILE")
-
-        while IFS= read -r file; do
-            if [ -f "$file" ]; then
-                local percent=$((deleted * 100 / total))
-                echo "XXX"
-                echo "$percent"
-                echo "Deleting: $(basename "$file")"
-                echo "XXX"
-
-                sudo rm -f "$file" 2>/dev/null
-                deleted=$((deleted + 1))
-            fi
-        done < "$TEMP_SELECTION_FILE"
-
-        echo "100"
-    ) | dialog --title "Deleting Files" --gauge "Deleting $file_count files..." 8 70 0
-
-    dialog --title "Deletion Complete" --msgbox "✓ Deleted $file_count files from storage." 6 50
-
-    rm -f "$TEMP_SELECTION_FILE"
-}
-
-# GUI File Browser
-gui_file_browser() {
-    # Check if GUI is available
-    if [ -z "$DISPLAY" ]; then
-        dialog --title "GUI Not Available" --yesno "GUI file browser requires X11.\n\nOptions:\n• Install Thunar file manager (~25MB)\n• Use terminal file browser instead\n\nWould you like to install Thunar?" 12 60
-
-        if [ $? -eq 0 ]; then
-            install_gui_browser
-        else
-            terminal_file_browser
-        fi
-        return
-    fi
-
-    # Check if Thunar is installed
-    if ! command -v thunar >/dev/null 2>&1; then
-        dialog --title "Thunar Not Installed" --yesno "Thunar file manager is not installed.\n\nInstall now? (~25MB download)" 8 50
-
-        if [ $? -eq 0 ]; then
-            install_gui_browser
-        else
-            terminal_file_browser
-        fi
-        return
-    fi
-
-    # Launch Thunar
-    dialog --title "Launching GUI" --infobox "Starting Thunar file browser...\n\n$PHOTO_DIR" 6 50
-    thunar "$PHOTO_DIR" &
-    sleep 2
-
-    dialog --title "GUI Browser Launched" --msgbox "Thunar file browser is now running.\n\nTo copy files to USB:\n1. Insert USB drive\n2. It will appear in left sidebar\n3. Drag and drop files to USB\n\nPress Alt+Tab to switch windows." 12 60
-}
-
-install_gui_browser() {
-    dialog --title "Installing" --infobox "Installing Thunar and X11...\n\nThis may take a few minutes.\n\nPlease wait..." 8 50
-
-    # Install minimal X11 and Thunar
-    if sudo apt-get update >/dev/null 2>&1 && sudo apt-get install -y xorg thunar >/dev/null 2>&1; then
-        dialog --title "Installation Complete" --msgbox "✓ Thunar installed successfully!\n\nYou can now use the GUI file browser.\n\nNote: You may need to configure X11\nfor your display if not already set up." 10 60
-
-        # Try to launch if DISPLAY is set
-        if [ -n "$DISPLAY" ]; then
-            gui_file_browser
-        fi
-    else
-        dialog --title "Installation Failed" --msgbox "❌ Failed to install Thunar.\n\nPossible reasons:\n• No internet connection\n• Insufficient disk space\n• Package repository issues\n\nUsing terminal file browser instead." 12 60
-        terminal_file_browser
-    fi
-}
-
-# Quick USB Copy
-quick_usb_copy() {
-    if [ ! -d "$PHOTO_DIR" ]; then
-        dialog --title "Error" --msgbox "Photo directory not found:\n$PHOTO_DIR" 8 60
-        return
-    fi
-
-    # Quick date selection for common scenarios
-    dialog --title "Quick USB Copy" --menu "Select files to copy:" 14 60 6 \
-        1 "Today's Photos" \
-        2 "Last 7 Days" \
-        3 "This Month" \
-        4 "All Photos" \
-        5 "Custom Selection" \
-        6 "Cancel" 2>"$TEMP_DIR/quick_copy_choice"
-
-    if [ $? -ne 0 ]; then
-        return
-    fi
-
-    local choice=$(cat "$TEMP_DIR/quick_copy_choice")
-
+    choice=$(cat "$TEMP_DIR/file_choice")
     case $choice in
-        6) return ;;
-        5) terminal_file_browser; return ;;
+        1) browse_camera_share ;;
+        2) check_disk_space ;;
+        3) show_recent_photos ;;
+        4) cleanup_files ;;
+        5) backup_config ;;
+        6) import_config ;;
+        7) return ;;
     esac
 
-    # Build find command
-    local find_cmd="find \"$PHOTO_DIR\" -type f"
-    local desc=""
-
-    case $choice in
-        1)
-            find_cmd="$find_cmd -mtime 0"
-            desc="Today's Photos"
-            ;;
-        2)
-            find_cmd="$find_cmd -mtime -7"
-            desc="Last 7 Days"
-            ;;
-        3)
-            local month_start=$(date +%Y-%m-01)
-            find_cmd="$find_cmd -newermt \"$month_start\""
-            desc="This Month"
-            ;;
-        4)
-            desc="All Photos"
-            ;;
-    esac
-
-    # Get files
-    dialog --title "Scanning..." --infobox "Finding files...\n\n$desc" 6 50
-    local files=$(eval "$find_cmd 2>/dev/null")
-    local file_count=$(echo "$files" | grep -c '^' 2>/dev/null || echo "0")
-
-    if [ -z "$files" ] || [ "$file_count" -eq 0 ]; then
-        dialog --title "No Files" --msgbox "No files found for:\n$desc" 8 50
-        return
-    fi
-
-    local total_size=$(echo "$files" | xargs du -ch 2>/dev/null | tail -1 | cut -f1)
-
-    # Confirm
-    if ! dialog --title "Confirm Quick Copy" --yesno "Copy $file_count files ($total_size) to USB?\n\nFiles: $desc\n\nProceed?" 10 60; then
-        return
-    fi
-
-    # Save to temp file
-    echo "$files" > "$TEMP_SELECTION_FILE"
-
-    # Copy to USB
-    copy_selected_to_usb "$file_count" "$total_size"
+    file_management
 }
 
-# File Statistics
-file_statistics() {
-    if [ ! -d "$PHOTO_DIR" ]; then
-        dialog --title "Error" --msgbox "Photo directory not found:\n$PHOTO_DIR" 8 60
-        return
-    fi
+browse_camera_share() {
+    local share_path="/srv/samba/camera-share"
+    if [ -d "$share_path" ]; then
+        local file_count=$(find "$share_path" -type f 2>/dev/null | wc -l)
+        local total_size=$(du -sh "$share_path" 2>/dev/null | cut -f1)
+        local recent_files=$(find "$share_path" -type f -mtime -7 2>/dev/null | head -10 | sed 's|.*/||')
 
-    dialog --title "Calculating..." --infobox "Analyzing photo storage...\n\nThis may take a moment..." 6 50
+        local browse_info="CAMERA SHARE CONTENTS
+=====================
 
-    # Calculate stats
-    local total_files=$(find "$PHOTO_DIR" -type f 2>/dev/null | wc -l)
-    local total_size=$(du -sh "$PHOTO_DIR" 2>/dev/null | cut -f1)
-
-    local today_files=$(find "$PHOTO_DIR" -type f -mtime 0 2>/dev/null | wc -l)
-    local today_size=$(find "$PHOTO_DIR" -type f -mtime 0 2>/dev/null | xargs du -ch 2>/dev/null | tail -1 | cut -f1 || echo "0")
-
-    local yesterday_files=$(find "$PHOTO_DIR" -type f -mtime 1 2>/dev/null | wc -l)
-    local yesterday_size=$(find "$PHOTO_DIR" -type f -mtime 1 2>/dev/null | xargs du -ch 2>/dev/null | tail -1 | cut -f1 || echo "0")
-
-    local week_files=$(find "$PHOTO_DIR" -type f -mtime -7 2>/dev/null | wc -l)
-    local week_size=$(find "$PHOTO_DIR" -type f -mtime -7 2>/dev/null | xargs du -ch 2>/dev/null | tail -1 | cut -f1 || echo "0")
-
-    local older_files=$((total_files - week_files))
-
-    # Get oldest and newest file dates
-    local oldest_file=$(find "$PHOTO_DIR" -type f -printf '%T+ %p\n' 2>/dev/null | sort | head -1 | cut -d' ' -f1 | cut -d'+' -f1)
-    local newest_file=$(find "$PHOTO_DIR" -type f -printf '%T+ %p\n' 2>/dev/null | sort -r | head -1 | cut -d' ' -f1 | cut -d'+' -f1)
-
-    # Disk usage
-    local disk_total=$(df -h "$PHOTO_DIR" 2>/dev/null | awk 'NR==2{print $2}')
-    local disk_used=$(df -h "$PHOTO_DIR" 2>/dev/null | awk 'NR==2{print $3}')
-    local disk_free=$(df -h "$PHOTO_DIR" 2>/dev/null | awk 'NR==2{print $4}')
-    local disk_percent=$(df -h "$PHOTO_DIR" 2>/dev/null | awk 'NR==2{print $5}')
-
-    local stats_text="PHOTO STORAGE STATISTICS
-========================
-
-Storage Path: $PHOTO_DIR
-
-Total Files: $total_files
+Path: $share_path
+Total Files: $file_count
 Total Size: $total_size
 
-Files by Date:
-  • Today:        $today_files files ($today_size)
-  • Yesterday:    $yesterday_files files ($yesterday_size)
-  • Last 7 Days:  $week_files files ($week_size)
-  • Older:        $older_files files
+Recent Files (last 7 days):
+$recent_files"
 
-Date Range:
-  • Oldest: $oldest_file
-  • Newest: $newest_file
-
-Disk Usage:
-  • Total: $disk_total
-  • Used:  $disk_used ($disk_percent)
-  • Free:  $disk_free
-
-Average File Size: $(echo "scale=2; $total_size / $total_files" | bc 2>/dev/null || echo "N/A") MB"
-
-    dialog --title "Photo Statistics" --msgbox "$stats_text" 24 70
-}
-
-# File Cleanup
-file_cleanup() {
-    dialog --title "File Cleanup" --menu "Choose cleanup option:" 14 60 6 \
-        1 "Delete Files Older than 30 Days" \
-        2 "Delete Files Older than 60 Days" \
-        3 "Delete Files Older than 90 Days" \
-        4 "Archive to USB (then delete)" \
-        5 "Custom Cleanup" \
-        6 "Cancel" 2>"$TEMP_DIR/cleanup_choice"
-
-    if [ $? -ne 0 ]; then
-        return
+        dialog --title "Camera Share Browser" --msgbox "$browse_info" 18 70
+    else
+        dialog --title "Error" --msgbox "Camera share directory not found: $share_path" 8 60
     fi
-
-    local choice=$(cat "$TEMP_DIR/cleanup_choice")
-
-    case $choice in
-        1) cleanup_old_files 30 ;;
-        2) cleanup_old_files 60 ;;
-        3) cleanup_old_files 90 ;;
-        4) archive_and_cleanup ;;
-        5) terminal_file_browser ;;
-        6) return ;;
-    esac
-}
-
-cleanup_old_files() {
-    local days="$1"
-
-    if [ ! -d "$PHOTO_DIR" ]; then
-        dialog --title "Error" --msgbox "Photo directory not found:\n$PHOTO_DIR" 8 60
-        return
-    fi
-
-    # Find old files
-    dialog --title "Scanning..." --infobox "Finding files older than $days days..." 6 50
-    local old_files=$(find "$PHOTO_DIR" -type f -mtime +$days 2>/dev/null)
-    local file_count=$(echo "$old_files" | grep -c '^' 2>/dev/null || echo "0")
-
-    if [ -z "$old_files" ] || [ "$file_count" -eq 0 ]; then
-        dialog --title "No Files" --msgbox "No files older than $days days found." 8 50
-        return
-    fi
-
-    local total_size=$(echo "$old_files" | xargs du -ch 2>/dev/null | tail -1 | cut -f1)
-
-    # Confirm deletion
-    if ! dialog --title "Confirm Cleanup" --yesno "⚠️  DELETE $file_count files older than $days days?\n\nTotal size: $total_size\n\nThis action CANNOT be undone!\n\nContinue?" 12 60; then
-        return
-    fi
-
-    # Save to temp file and delete
-    echo "$old_files" > "$TEMP_SELECTION_FILE"
-    delete_selected_files "$file_count"
-}
-
-archive_and_cleanup() {
-    dialog --title "Archive & Cleanup" --msgbox "Archive and cleanup feature:\n\n1. Select files to archive\n2. Copy to USB drive\n3. Delete from local storage after successful copy\n\nThis helps free up space while preserving files on USB backup.\n\nUse 'Terminal File Browser' to select files,\nthen choose 'Copy to USB' option." 14 70
-
-    terminal_file_browser
-}
-
-# Open in Shell
-open_in_shell() {
-    clear
-    echo "==================================="
-    echo "Camera Bridge - Photo Directory"
-    echo "==================================="
-    echo ""
-    echo "Location: $PHOTO_DIR"
-    echo ""
-    echo "You are now in a shell session."
-    echo "Type 'exit' to return to the menu."
-    echo ""
-
-    cd "$PHOTO_DIR" 2>/dev/null || cd /
-    bash
-}
-
-# USB Management
-usb_management() {
-    while true; do
-        dialog --title "USB Management" --menu "Choose an option:" 14 60 7 \
-            1 "Detect USB Devices" \
-            2 "Mount USB Device" \
-            3 "Unmount USB Device" \
-            4 "Format USB Device" \
-            5 "Check USB Health" \
-            6 "Eject USB Safely" \
-            7 "Back to File Management" 2>"$TEMP_DIR/usb_mgmt_choice"
-
-        if [ $? -ne 0 ]; then
-            return
-        fi
-
-        choice=$(cat "$TEMP_DIR/usb_mgmt_choice")
-        case $choice in
-            1) show_usb_devices ;;
-            2) mount_usb_device ;;
-            3) unmount_usb_device ;;
-            4) format_usb_device ;;
-            5) check_usb_health ;;
-            6) eject_usb_safely ;;
-            7) return ;;
-        esac
-    done
-}
-
-show_usb_devices() {
-    dialog --title "Scanning..." --infobox "Detecting USB devices...\n\nPlease wait..." 6 50
-    sleep 1
-
-    local usb_list=$(detect_usb_devices)
-
-    if [ "$usb_list" = "NONE" ]; then
-        dialog --title "No USB Devices" --msgbox "No USB devices detected.\n\nPlease insert a USB drive and try again." 8 50
-        return
-    fi
-
-    # Format USB list for display
-    local usb_info=""
-    echo -e "$usb_list" | while IFS='|' read -r index device model size mount free fs; do
-        if [ -n "$device" ]; then
-            usb_info="${usb_info}Device: $device\n"
-            usb_info="${usb_info}Model: $model\n"
-            usb_info="${usb_info}Size: $size\n"
-            usb_info="${usb_info}Filesystem: $fs\n"
-            usb_info="${usb_info}Mount: $mount\n"
-            if [ "$mount" != "<not mounted>" ]; then
-                usb_info="${usb_info}Free Space: $free\n"
-            fi
-            usb_info="${usb_info}\n"
-            echo -e "$usb_info"
-        fi
-    done > "$TEMP_DIR/usb_info_display"
-
-    dialog --title "USB Devices Detected" --msgbox "$(cat "$TEMP_DIR/usb_info_display")" 20 70
-}
-
-mount_usb_device() {
-    dialog --title "Mount USB" --msgbox "USB mounting feature:\n\nUSB devices are automatically mounted\nwhen you select them for file operations.\n\nIf you need to manually mount:\n1. Detect USB devices first\n2. Note the device path (/dev/sdX)\n3. Use 'Open in Shell' and run:\n   sudo mount /dev/sdX1 /media/usb" 14 60
-}
-
-unmount_usb_device() {
-    dialog --title "Unmount USB" --msgbox "USB unmounting feature:\n\nTo safely unmount a USB device:\n\n1. Use 'Open in Shell'\n2. Run: sudo umount /media/usb_*\n3. Or use 'Eject USB Safely' option\n\nAlways unmount before removing\nto prevent data corruption!" 12 60
-}
-
-format_usb_device() {
-    dialog --title "Format USB" --msgbox "⚠️  USB formatting is not yet implemented\nin this menu system.\n\nTo format a USB drive:\n\n1. Use 'Open in Shell'\n2. Identify device: lsblk\n3. Format: sudo mkfs.ext4 /dev/sdX1\n   or: sudo mkfs.vfat /dev/sdX1\n\n⚠️  WARNING: Formatting erases all data!" 14 60
-}
-
-check_usb_health() {
-    dialog --title "USB Health Check" --msgbox "USB health checking:\n\nBasic checks available:\n• Device detection: Working\n• Mount status: Available\n• Free space: Displayed\n\nFor detailed diagnostics:\n1. Use 'Open in Shell'\n2. Run: sudo smartctl -a /dev/sdX\n\n(Requires smartmontools package)" 14 60
-}
-
-eject_usb_safely() {
-    local usb_list=$(detect_usb_devices)
-
-    if [ "$usb_list" = "NONE" ]; then
-        dialog --title "No USB Devices" --msgbox "No USB devices detected." 6 40
-        return
-    fi
-
-    dialog --title "Eject USB" --msgbox "Safe USB ejection:\n\nBefore removing your USB drive:\n\n1. Close all file operations\n2. Use 'Unmount USB Device'\n3. Wait for confirmation\n4. Physically remove the drive\n\nThis prevents data loss and corruption." 12 60
 }
 
 # Maintenance menu

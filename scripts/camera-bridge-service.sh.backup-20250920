@@ -22,7 +22,6 @@ check_root() {
 
 # Monitor SMB share for new files
 
-
 monitor_files() {
 # Fixed sync_to_dropbox function
 sync_to_dropbox() {
@@ -90,9 +89,6 @@ periodic_sync() {
         fi
     done
 }
-# Fixed sync_to_dropbox function
-
-# Fixed periodic sync function
     log_message "Starting file monitor for $SMB_SHARE"
 
     # Ensure directory exists
