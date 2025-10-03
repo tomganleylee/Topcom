@@ -128,17 +128,6 @@ fi
 # Pi Zero 2 W specific optimizations
 log "Applying Pi Zero 2 W optimizations..."
 
-# Enable necessary kernel modules for USB gadget
-log "Configuring USB gadget support..."
-if ! grep -q "dtoverlay=dwc2" /boot/firmware/config.txt; then
-    echo "dtoverlay=dwc2" >> /boot/firmware/config.txt
-fi
-
-if ! grep -q "modules-load=dwc2" /boot/firmware/cmdline.txt; then
-    # Insert modules-load parameter after rootwait
-    sed -i 's/rootwait/rootwait modules-load=dwc2,libcomposite/' /boot/firmware/cmdline.txt
-fi
-
 # GPU memory optimization for headless operation
 if ! grep -q "gpu_mem=" /boot/firmware/config.txt; then
     echo "gpu_mem=16" >> /boot/firmware/config.txt
@@ -172,12 +161,10 @@ log "Creating directory structure..."
 mkdir -p /opt/camera-bridge/{scripts,web,config}
 mkdir -p /srv/samba/camera-share
 mkdir -p /var/log/camera-bridge
-mkdir -p /mnt/camera-bridge-usb
 
 # Set ownership
 chown -R camerabridge:camerabridge /srv/samba/camera-share
 chown -R camerabridge:camerabridge /var/log/camera-bridge
-chown -R camerabridge:camerabridge /mnt/camera-bridge-usb
 
 # Copy project files
 log "Installing Camera Bridge files..."
@@ -193,14 +180,11 @@ fi
 # Make scripts executable
 chmod +x /opt/camera-bridge/scripts/*.sh
 
-# Create symlinks for enhanced scripts
-ln -sf /opt/camera-bridge/scripts/camera-bridge-service-enhanced.sh /opt/camera-bridge/scripts/camera-bridge-service.sh
-ln -sf /opt/camera-bridge/scripts/terminal-ui-enhanced.sh /opt/camera-bridge/scripts/terminal-ui.sh
-
-# Set up systemd service with enhanced version
+# Use standard camera-bridge service (not enhanced/USB gadget version)
+# Set up systemd service
 cat > /etc/systemd/system/camera-bridge.service << 'EOF'
 [Unit]
-Description=Camera Bridge Service - Enhanced with USB Gadget Support
+Description=Camera Bridge Service - SMB Network Mode
 Documentation=https://github.com/tomganleylee/Topcom
 After=network.target network-online.target
 Wants=network-online.target
@@ -210,9 +194,9 @@ Requires=network.target
 Type=forking
 User=root
 Group=root
-ExecStart=/opt/camera-bridge/scripts/camera-bridge-service-enhanced.sh start
-ExecStop=/opt/camera-bridge/scripts/camera-bridge-service-enhanced.sh stop
-ExecReload=/opt/camera-bridge/scripts/camera-bridge-service-enhanced.sh restart
+ExecStart=/opt/camera-bridge/scripts/camera-bridge-service.sh start
+ExecStop=/opt/camera-bridge/scripts/camera-bridge-service.sh stop
+ExecReload=/opt/camera-bridge/scripts/camera-bridge-service.sh restart
 PIDFile=/var/run/camera-bridge.pid
 
 # Restart policy
@@ -228,7 +212,6 @@ LimitNPROC=512
 # Environment
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment=SMB_SHARE=/srv/samba/camera-share
-Environment=USB_MOUNT=/mnt/camera-bridge-usb
 Environment=LOG_FILE=/var/log/camera-bridge/service.log
 
 # Working directory
@@ -347,42 +330,19 @@ cat > /etc/logrotate.d/camera-bridge << 'EOF'
 }
 EOF
 
-# Create USB gadget configuration
-log "Setting up USB gadget configuration..."
-mkdir -p /opt/camera-bridge/config
-cat > /opt/camera-bridge/config/usb-gadget.conf << 'EOF'
-# USB Gadget Configuration for Pi Zero 2 W Camera Bridge
-STORAGE_SIZE_MB=2048
-VENDOR_ID="0x1d6b"
-PRODUCT_ID="0x0104"
-MANUFACTURER="Camera Bridge"
-PRODUCT="Photo Storage Device"
-AUTO_DELETE_SYNCED=false
-SYNC_INTERVAL=180
-EOF
-
 # Create command shortcuts
 log "Creating command shortcuts..."
 cat > /etc/profile.d/camera-bridge.sh << 'EOF'
 # Camera Bridge aliases for Pi Zero 2 W
 alias cb-ui='camera-bridge-ui'
-alias cb-status='camera-bridge-status'
-alias cb-logs='camera-bridge-logs'
-alias cb-wifi='camera-bridge-wifi'
-alias cb-usb='usb-gadget-manager.sh'
+alias cb-status='systemctl status camera-bridge'
+alias cb-logs='sudo journalctl -u camera-bridge -f'
+alias cb-wifi='sudo /opt/camera-bridge/scripts/wifi-manager.sh'
 alias cb-temp='vcgencmd measure_temp'
-alias cb-mode='camera-bridge-service-enhanced.sh'
-
-# USB gadget specific shortcuts
-alias usb-setup='usb-gadget-manager.sh setup'
-alias usb-enable='usb-gadget-manager.sh enable'
-alias usb-disable='usb-gadget-manager.sh disable'
-alias usb-status='usb-gadget-manager.sh status'
 EOF
 
 # Create global command links
-ln -sf /opt/camera-bridge/scripts/terminal-ui-enhanced.sh /usr/local/bin/camera-bridge-ui
-ln -sf /opt/camera-bridge/scripts/usb-gadget-manager.sh /usr/local/bin/usb-gadget-manager.sh
+ln -sf /opt/camera-bridge/scripts/terminal-ui.sh /usr/local/bin/camera-bridge-ui
 
 # Enable services
 log "Enabling services..."
@@ -390,25 +350,6 @@ systemctl enable nginx
 systemctl enable samba
 systemctl disable hostapd  # Managed by scripts
 systemctl disable dnsmasq  # Managed by scripts
-
-# Create desktop shortcuts if GUI available
-if [ -d "/usr/share/applications" ]; then
-    log "Creating desktop shortcuts..."
-
-    cat > /usr/share/applications/camera-bridge-modes.desktop << 'EOF'
-[Desktop Entry]
-Name=Camera Bridge Modes
-Comment=Switch between SMB and USB Gadget modes
-Exec=x-terminal-emulator -e "camera-bridge-service-enhanced.sh"
-Icon=preferences-system
-Type=Application
-Categories=System;Photography;
-Terminal=false
-StartupNotify=true
-EOF
-
-    chmod 644 /usr/share/applications/camera-bridge-*.desktop
-fi
 
 # Create boot optimization script
 log "Creating boot optimization..."
@@ -423,14 +364,6 @@ systemctl disable triggerhappy 2>/dev/null || true
 # Optimize boot parameters
 if ! grep -q "quiet" /boot/firmware/cmdline.txt; then
     sed -i 's/$/ quiet/' /boot/firmware/cmdline.txt
-fi
-
-# Load USB gadget modules early if configured for USB mode
-if [ -f "/opt/camera-bridge/config/camera-bridge.conf" ]; then
-    if grep -q 'OPERATION_MODE="usb-gadget"' /opt/camera-bridge/config/camera-bridge.conf; then
-        modprobe dwc2 2>/dev/null || true
-        modprobe libcomposite 2>/dev/null || true
-    fi
 fi
 EOF
 
@@ -500,13 +433,13 @@ echo "==========================================="
 echo "🍓 PI ZERO 2W CAMERA BRIDGE READY"
 echo "==========================================="
 echo ""
-echo "Hardware: Pi Zero 2 W with USB Gadget Support"
+echo "Hardware: Pi Zero 2 W"
 echo ""
 echo "Core Features Status:"
 echo "  ✓ SMB Network Sharing Mode"
-echo "  ✓ USB Gadget Storage Mode"
-echo "  ✓ Automatic mode detection"
+echo "  ✓ WiFi Auto-Connect & Hotspot"
 echo "  ✓ Pi Zero 2W optimizations"
+echo "  ✓ Low-power operation"
 echo ""
 echo "Seamless Boot Experience:"
 if [ "$BOOT_SETUP_SUCCESS" = true ]; then
@@ -561,16 +494,13 @@ fi
 echo "Available Commands:"
 echo "  cb-ui          - Terminal interface"
 echo "  cb-status      - System status"
-echo "  cb-usb         - USB gadget manager"
-echo "  cb-mode        - Mode switching"
-echo ""
-echo "Operation Modes:"
-echo "  SMB Mode       - Network file sharing for cameras with WiFi"
-echo "  USB Gadget     - Direct camera connection via USB-C"
+echo "  cb-logs        - View service logs"
+echo "  cb-wifi        - WiFi manager"
+echo "  cb-temp        - Check temperature"
 echo ""
 echo "Next Steps:"
 echo "1. Complete any manual setup commands above (if needed)"
-echo "2. Reboot to apply kernel changes: sudo reboot"
+echo "2. Reboot to apply optimizations: sudo reboot"
 echo "3. After reboot, enjoy seamless boot experience!"
 echo "4. Access web interface: http://[pi-ip]"
 echo "5. Configure Dropbox via terminal UI"
@@ -578,12 +508,12 @@ echo ""
 echo "On reboot, you should see:"
 echo "  → Custom Camera Bridge boot splash"
 echo "  → Automatic login as camerabridge user"
-echo "  → Welcome banner with Pi Zero 2W USB gadget options"
-echo "  → Terminal UI with mode switching capabilities"
+echo "  → Welcome banner with system status"
+echo "  → Terminal UI for full management"
 echo ""
-echo "USB Gadget Usage:"
-echo "1. Switch to USB mode: cb-mode switch-mode usb-gadget"
-echo "2. Connect Pi to camera via USB cable"
-echo "3. Camera will see Pi as USB storage device"
+echo "Network Sharing Usage:"
+echo "1. Connect camera to WiFi network"
+echo "2. Access SMB share: \\\\[pi-ip]\\photos"
+echo "3. Photos sync automatically to Dropbox"
 echo ""
-echo "Reboot required for USB gadget support!"
+echo "Reboot recommended to apply all optimizations!"

@@ -188,12 +188,22 @@ chown -R camerabridge:camerabridge /var/log/camera-bridge
 chown -R www-data:www-data /opt/camera-bridge/web
 
 log "Setting up nginx PHP configuration..."
+
+# Detect installed PHP-FPM version
+PHP_VERSION=$(php -v 2>/dev/null | head -1 | awk '{print $2}' | cut -d. -f1,2)
+if [ -z "$PHP_VERSION" ]; then
+    # Fallback: find installed php-fpm version
+    PHP_VERSION=$(ls /var/run/php/php*-fpm.sock 2>/dev/null | head -1 | grep -oP 'php\K[0-9.]+' || echo "8.3")
+fi
+
+log "Detected PHP version: $PHP_VERSION"
+
 # Enable PHP-FPM
-systemctl enable php8.3-fpm
-systemctl start php8.3-fpm
+systemctl enable php${PHP_VERSION}-fpm 2>/dev/null || systemctl enable php-fpm
+systemctl start php${PHP_VERSION}-fpm 2>/dev/null || systemctl start php-fpm
 
 # Configure nginx for PHP
-cat > /etc/nginx/sites-available/camera-bridge << 'EOF'
+cat > /etc/nginx/sites-available/camera-bridge << EOF
 server {
     listen 80 default_server;
     listen [::]:80 default_server;
@@ -204,12 +214,12 @@ server {
     server_name _;
 
     location / {
-        try_files $uri $uri/ =404;
+        try_files \$uri \$uri/ =404;
     }
 
     location ~ \.php$ {
         include snippets/fastcgi-php.conf;
-        fastcgi_pass unix:/var/run/php/php8.3-fpm.sock;
+        fastcgi_pass unix:/var/run/php/php${PHP_VERSION}-fpm.sock;
     }
 
     location ~ /\.ht {

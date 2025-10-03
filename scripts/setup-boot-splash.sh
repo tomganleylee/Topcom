@@ -211,35 +211,9 @@ EOF
 update_installation_scripts() {
     log_message "Updating installation scripts to include boot splash"
 
-    # Update the main installation script
-    local install_script="/home/tom/camera-bridge/scripts/install-packages.sh"
-
-    if [ -f "$install_script" ]; then
-        # Add boot splash setup to installation
-        if ! grep -q "setup-boot-splash.sh" "$install_script"; then
-            echo "" >> "$install_script"
-            echo "# Setup boot splash" >> "$install_script"
-            echo "log_message \"Setting up boot splash\"" >> "$install_script"
-            echo "./setup-boot-splash.sh enable" >> "$install_script"
-        fi
-        log_message "Updated main installation script"
-    fi
-
-    # Update Pi Zero 2W installation script
-    local pi_install_script="/home/tom/camera-bridge/raspberry-pi/pi-zero-2w/scripts/install-pi-zero-2w.sh"
-
-    if [ -f "$pi_install_script" ]; then
-        if ! grep -q "setup-boot-splash.sh" "$pi_install_script"; then
-            # Add near the end, before final messages
-            sed -i '/^log_message "Installation complete"/i \
-\
-# Setup boot splash and auto-login\
-log_message "Configuring seamless user experience"\
-"$SCRIPT_DIR/../../../scripts/setup-boot-splash.sh" enable\
-"$SCRIPT_DIR/../../../scripts/setup-auto-login.sh" enable' "$pi_install_script"
-        fi
-        log_message "Updated Pi Zero 2W installation script"
-    fi
+    # This function is deprecated - boot splash setup is now integrated directly into install scripts
+    log_message "Boot splash integration is handled by installation scripts"
+    return 0
 }
 
 # Main function
