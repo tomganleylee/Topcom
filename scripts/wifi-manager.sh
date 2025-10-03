@@ -77,7 +77,8 @@ init_saved_networks() {
   "last_updated": ""
 }
 EOF
-        chmod 600 "$SAVED_NETWORKS_FILE"
+        chown camerabridge:camerabridge "$SAVED_NETWORKS_FILE" 2>/dev/null || true
+        chmod 664 "$SAVED_NETWORKS_FILE"
     fi
 }
 
@@ -127,8 +128,17 @@ try:
     # Remove existing entry for this SSID
     data['networks'] = [n for n in data['networks'] if n['ssid'] != '$ssid']
 
-    # Add new entry
-    data['networks'].append($new_network)
+    # Create new entry directly in Python
+    new_entry = {
+        'ssid': '$ssid',
+        'psk_hash': '$psk_hash',
+        'password_saved': $([ -n '$psk_hash' ] && echo 'True' || echo 'False'),
+        'priority': $([ -n '$psk_hash' ] && echo '10' || echo '5'),
+        'last_connected': '$timestamp',
+        'auto_connect': True
+    }
+
+    data['networks'].append(new_entry)
     data['last_updated'] = '$timestamp'
 
     with open('$SAVED_NETWORKS_FILE', 'w') as f:

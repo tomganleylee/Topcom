@@ -7,7 +7,10 @@
       "Read(//srv/samba/**)",
       "Bash(command -v:*)",
       "Bash(echo:*)",
-      "Bash(bash:*)"
+      "Bash(bash:*)",
+      "Read(//etc/systemd/system/**)",
+      "Bash(iwgetid:*)",
+      "Bash(systemctl:*)"
     ],
     "deny": [],
     "ask": []

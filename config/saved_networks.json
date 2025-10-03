@@ -15,9 +15,17 @@
       "priority": 10,
       "last_connected": "2025-09-29T13:48:14Z",
       "auto_connect": true
+    },
+    {
+      "ssid": "5GEE-WiFi-2MFP-2.4GHz",
+      "psk_hash": "8aa0ea296ee2c812bc5c3e6ebcefaa6675adee8d15784983430770de9478708a",
+      "password_saved": true,
+      "priority": 10,
+      "last_connected": "2025-10-01T09:52:36Z",
+      "auto_connect": true
     }
   ],
   "version": "1.0",
   "auto_connect": true,
-  "last_updated": "2025-09-29T13:48:14Z"
+  "last_updated": "2025-10-01T09:52:36Z"
 }

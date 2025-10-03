@@ -659,11 +659,21 @@ list_saved_networks() {
             fi
         done)
     else
-        formatted_output="$networks_output\n\n⚠️ Could not scan for available networks"
+        formatted_output="$networks_output
+
+⚠️ Could not scan for available networks"
     fi
 
-    # Show in scrollable format
-    dialog --title "Saved Networks" --msgbox "$formatted_output\n\n✓ = Password saved | ○ = Open network\n🔄 = Auto-connect enabled | ⏸️ = Auto-connect disabled\n⚡ = Currently available | ⭕ = Not in range\n\nPress OK to return to menu" 20 80
+    # Show in scrollable format with proper newlines
+    local display_text="$formatted_output
+
+✓ = Password saved | ○ = Open network
+🔄 = Auto-connect enabled | ⏸️ = Auto-connect disabled
+⚡ = Currently available | ⭕ = Not in range
+
+Press OK to return to menu"
+
+    dialog --title "Saved Networks" --msgbox "$display_text" 20 80
 }
 
 # Connect to a saved network

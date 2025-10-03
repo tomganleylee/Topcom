@@ -2,10 +2,11 @@
 
 ## Project Overview
 
-This is a complete camera bridge system that automatically syncs photos from cameras to cloud storage (Dropbox). The system supports two main operation modes:
+This is a complete camera bridge system that automatically syncs photos from cameras to cloud storage (Dropbox). The system primarily uses:
 
 1. **Network SMB Mode**: Traditional network file sharing for cameras with WiFi
-2. **USB Gadget Mode**: Pi Zero 2 W acts as a USB storage device for direct camera connection
+
+**Note**: USB Gadget Mode has been deprecated and is no longer in active use. The project now focuses solely on the original SMB network sharing approach.
 
 ## Key Features Implemented
 
@@ -45,11 +46,8 @@ npm run typecheck || echo "No typecheck configuration found"
 # Test camera bridge service
 sudo systemctl status camera-bridge
 
-# Test USB gadget functionality (Pi Zero 2 W)
-sudo /usr/local/bin/usb-gadget-manager.sh status
-
-# Test terminal UI
-sudo /usr/local/bin/terminal-ui-enhanced
+# Test terminal UI (primary interface)
+sudo /usr/local/bin/terminal-ui
 
 # Test seamless boot experience
 sudo /usr/local/bin/camera-bridge-autostart
@@ -71,21 +69,14 @@ sudo ./scripts/setup-boot-splash.sh enable
 
 ### Service Management
 ```bash
-# Camera bridge service
+# Camera bridge service (primary service)
 sudo systemctl start|stop|restart|status camera-bridge
 
-# Switch between modes (enhanced service only)
-sudo /usr/local/bin/camera-bridge-service switch-mode usb-gadget
-sudo /usr/local/bin/camera-bridge-service switch-mode smb
-
-# USB gadget management
-sudo /usr/local/bin/usb-gadget-manager.sh setup|enable|disable|status
-
 # Manual sync
-sudo /usr/local/bin/camera-bridge-service sync-now
+sudo /opt/camera-bridge/scripts/camera-bridge-service.sh sync-now
 
 # Test Dropbox connection
-sudo /usr/local/bin/camera-bridge-service test-dropbox
+sudo /opt/camera-bridge/scripts/camera-bridge-service.sh test-dropbox
 ```
 
 ### Log Monitoring
@@ -106,18 +97,20 @@ sudo tail -f /var/log/camera-bridge/autostart.log
 ## File Structure
 
 ### Core Scripts
-- `scripts/camera-bridge-service.sh` - Original SMB mode service
-- `scripts/camera-bridge-service-enhanced.sh` - Dual-mode service with USB gadget support
-- `scripts/terminal-ui.sh` - Original terminal interface
-- `scripts/terminal-ui-enhanced.sh` - Enhanced UI with mode switching
+- `scripts/camera-bridge-service.sh` - Main SMB mode service (primary service)
+- `scripts/terminal-ui.sh` - Terminal interface (primary UI)
 - `scripts/wifi-manager.sh` - WiFi and hotspot management
 - `scripts/install-packages.sh` - Main installation script
 
-### USB Gadget Mode (Pi Zero 2 W)
-- `raspberry-pi/pi-zero-2w/scripts/usb-gadget-manager.sh` - USB gadget configuration
-- `raspberry-pi/pi-zero-2w/scripts/install-pi-zero-2w.sh` - Pi Zero 2 W installer
-- `raspberry-pi/pi-zero-2w/USB-GADGET-MODE.md` - Complete documentation
-- `raspberry-pi/pi-zero-2w/QUICK-START.md` - 5-minute setup guide
+### Deprecated Scripts (USB Gadget Mode - No longer used)
+- `scripts/camera-bridge-service-enhanced.sh` - Dual-mode service (deprecated)
+- `scripts/terminal-ui-enhanced.sh` - Enhanced UI with mode switching (deprecated)
+
+### USB Gadget Mode (Pi Zero 2 W) - DEPRECATED
+- `raspberry-pi/pi-zero-2w/scripts/usb-gadget-manager.sh` - USB gadget configuration (deprecated)
+- `raspberry-pi/pi-zero-2w/scripts/install-pi-zero-2w.sh` - Pi Zero 2 W installer (deprecated)
+- `raspberry-pi/pi-zero-2w/USB-GADGET-MODE.md` - Complete documentation (deprecated)
+- `raspberry-pi/pi-zero-2w/QUICK-START.md` - 5-minute setup guide (deprecated)
 
 ### Seamless Boot Experience
 - `scripts/setup-auto-login.sh` - Auto-login configuration
@@ -170,12 +163,12 @@ sudo tail -f /var/log/camera-bridge/autostart.log
 
 ## Technical Architecture
 
-### Network SMB Mode
+### Network SMB Mode (Active)
 ```
 Camera → WiFi → Samba Share → inotify → rclone → Dropbox
 ```
 
-### USB Gadget Mode
+### USB Gadget Mode (DEPRECATED - No longer used)
 ```
 Camera → USB-C → Pi Zero 2W → Mass Storage → inotify → rclone → Dropbox
 ```
