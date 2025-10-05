@@ -44,10 +44,51 @@ check_permissions() {
     fi
 }
 
+# Get network information for display
+get_network_info() {
+    local info=""
+
+    # Check if bridge exists
+    if ip link show br0 >/dev/null 2>&1; then
+        local bridge_ip=$(ip addr show br0 2>/dev/null | grep "inet " | awk '{print $2}' | cut -d/ -f1)
+        info+="📶 Network: Bridge Mode (WiFi + Ethernet)\n"
+        info+="   IP: ${bridge_ip:-192.168.10.1}\n"
+    else
+        local eth_ip=$(ip addr show eno1 2>/dev/null | grep "inet " | awk '{print $2}' | cut -d/ -f1)
+        info+="📶 Network: Ethernet Only\n"
+        info+="   IP: ${eth_ip:-192.168.10.1}\n"
+    fi
+
+    # WiFi AP Status
+    if systemctl is-active --quiet hostapd; then
+        info+="   WiFi AP: ✓ Active\n"
+        info+="   SSID: CameraBridge-Photos\n"
+        info+="   Password: BridgeCameraBVITeslaTom\n"
+    else
+        info+="   WiFi AP: ✗ Inactive\n"
+    fi
+
+    # SMB Share info
+    info+="📁 SMB Share: \\\\192.168.10.1\\photos\n"
+    info+="   Username: camera\n"
+    info+="   Password: camera123\n"
+
+    # Connected clients
+    if [ -f /var/lib/misc/dnsmasq.leases ]; then
+        local client_count=$(wc -l < /var/lib/misc/dnsmasq.leases 2>/dev/null || echo "0")
+        info+="👥 Connected: $client_count client(s)\n"
+    fi
+
+    echo -e "$info"
+}
+
 # Main menu
 show_main_menu() {
     while true; do
-        dialog --title "$TITLE" --menu "Choose an option:" $DIALOG_HEIGHT $DIALOG_WIDTH 12 \
+        # Get network info for display
+        local net_info=$(get_network_info)
+
+        dialog --title "$TITLE" --menu "$net_info\nChoose an option:" 25 75 12 \
             1 "WiFi Status & Management" \
             2 "Dropbox Configuration" \
             3 "System Status" \
@@ -97,20 +138,22 @@ wifi_menu() {
             fi
         fi
 
-        dialog --title "WiFi Management" --menu "$status_text\n\nChoose an option:" $DIALOG_HEIGHT $DIALOG_WIDTH 13 \
+        dialog --title "WiFi Management" --menu "$status_text\n\nChoose an option:" 25 $DIALOG_WIDTH 15 \
             1 "Show WiFi Status" \
             2 "Scan Networks" \
             3 "Connect to Network" \
             4 "Manual Connection" \
             5 "📱 Saved Networks" \
             6 "🔄 Auto-Connect" \
-            7 "Start Setup Hotspot" \
-            8 "Stop Setup Hotspot" \
-            9 "Monitor Connection" \
-            10 "Reset WiFi Settings" \
-            11 "Advanced WiFi Tools" \
-            12 "Network Settings" \
-            13 "Back to Main Menu" 2>"$TEMP_DIR/wifi_choice"
+            7 "📶 Start Camera WiFi AP (Bridge)" \
+            8 "🛑 Stop Camera WiFi AP" \
+            9 "📊 WiFi AP Status" \
+            10 "Start Setup Hotspot" \
+            11 "Stop Setup Hotspot" \
+            12 "Monitor Connection" \
+            13 "Reset WiFi Settings" \
+            14 "Advanced WiFi Tools" \
+            15 "Back to Main Menu" 2>"$TEMP_DIR/wifi_choice"
 
         if [ $? -ne 0 ]; then
             return
@@ -124,13 +167,15 @@ wifi_menu() {
             4) manual_connect ;;
             5) saved_networks_menu ;;
             6) auto_connect_menu ;;
-            7) start_hotspot ;;
-            8) stop_hotspot ;;
-            9) monitor_wifi ;;
-            10) reset_wifi_settings ;;
-            11) advanced_wifi_menu ;;
-            12) network_settings_menu ;;
-            13) return ;;
+            7) start_camera_wifi_ap ;;
+            8) stop_camera_wifi_ap ;;
+            9) show_wifi_ap_status ;;
+            10) start_hotspot ;;
+            11) stop_hotspot ;;
+            12) monitor_wifi ;;
+            13) reset_wifi_settings ;;
+            14) advanced_wifi_menu ;;
+            15) return ;;
             *) ;;
         esac
     done
@@ -514,6 +559,57 @@ stop_hotspot() {
     else
         dialog --title "Error" --msgbox "WiFi manager script not found" 8 40
     fi
+}
+
+# Start Camera WiFi AP (Bridge Mode)
+start_camera_wifi_ap() {
+    dialog --title "Starting Camera WiFi AP..." --infobox "Setting up WiFi access point in bridge mode...\nThis may take a moment." 6 60
+
+    local ap_script="/opt/camera-bridge/scripts/setup-wifi-ap.sh"
+
+    if [ ! -x "$ap_script" ]; then
+        dialog --title "Error" --msgbox "WiFi AP setup script not found at $ap_script" 10 60
+        return
+    fi
+
+    # Run the setup script
+    local output=$(sudo "$ap_script" start 2>&1)
+    local status=$?
+
+    if [ $status -eq 0 ]; then
+        dialog --title "WiFi AP Active" --msgbox "Camera WiFi Access Point is now active!\n\nNetwork Information:\n━━━━━━━━━━━━━━━━━━━━━━━━\nSSID: CameraBridge-Photos\nPassword: BridgeCameraBVITeslaTom\nIP Address: 192.168.10.1\n\nSMB Share: \\\\192.168.10.1\\photos\nUsername: camera\nPassword: camera123\n\nBoth WiFi and Ethernet cameras can now connect!" 20 70
+    else
+        dialog --title "Error" --msgbox "Failed to start WiFi AP.\n\nError details:\n$output\n\nPlease check:\n1. USB WiFi adapter is plugged in\n2. Run 'sudo /opt/camera-bridge/scripts/setup-wifi-ap.sh status' for details" 18 70
+    fi
+}
+
+# Stop Camera WiFi AP
+stop_camera_wifi_ap() {
+    dialog --title "Confirm" --yesno "Stop Camera WiFi Access Point?\n\nThis will disable WiFi access for cameras.\nEthernet will continue to work." 10 60
+
+    if [ $? -eq 0 ]; then
+        dialog --title "Stopping WiFi AP..." --infobox "Stopping Camera WiFi AP..." 5 50
+
+        local ap_script="/opt/camera-bridge/scripts/setup-wifi-ap.sh"
+        sudo "$ap_script" stop 2>&1
+
+        dialog --title "WiFi AP Stopped" --msgbox "Camera WiFi AP has been stopped.\n\nEthernet network is still active on 192.168.10.1" 10 60
+    fi
+}
+
+# Show WiFi AP Status
+show_wifi_ap_status() {
+    local ap_script="/opt/camera-bridge/scripts/setup-wifi-ap.sh"
+
+    if [ ! -x "$ap_script" ]; then
+        dialog --title "Error" --msgbox "WiFi AP script not found" 8 50
+        return
+    fi
+
+    # Get status info
+    local status_info=$(sudo "$ap_script" status 2>&1)
+
+    dialog --title "Camera WiFi AP Status" --msgbox "$status_info" 25 80
 }
 
 monitor_wifi() {

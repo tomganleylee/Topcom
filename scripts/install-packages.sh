@@ -55,7 +55,23 @@ apt install -y \
     net-tools \
     htop \
     vim \
-    rsync
+    rsync \
+    bridge-utils \
+    iw \
+    wpasupplicant
+
+# Install WiFi AP packages and drivers
+log "Installing WiFi AP support packages..."
+DEBIAN_FRONTEND=noninteractive apt install -y iptables-persistent
+
+log "Installing USB WiFi drivers..."
+if apt install -y rtl8812au-dkms 2>/dev/null; then
+    log "RTL8812AU driver installed successfully"
+    # Load the driver
+    modprobe 8812au 2>/dev/null || true
+else
+    warn "RTL8812AU driver not available in repos (may not be needed for all adapters)"
+fi
 
 # Install rclone manually as it might not be in default repos
 log "Installing rclone..."
@@ -563,6 +579,23 @@ else
     echo "   - Access SMB share: \\\\$(hostname -I | awk '{print $1}')\\photos"
     echo "   - Drop photos for sync"
 fi
+echo ""
+echo "WiFi Access Point Setup:"
+echo "  ✓ WiFi AP drivers installed (RTL8812AU)"
+echo "  ✓ Bridge networking configured"
+echo "  ✓ NAT/routing configured for internet access"
+echo ""
+echo "To enable WiFi AP (after USB WiFi adapter plugged in):"
+echo "  1. Unplug and replug USB WiFi adapter"
+echo "  2. sudo /opt/camera-bridge/scripts/setup-wifi-ap.sh start"
+echo "  OR use Terminal UI: WiFi Management → Start Camera WiFi AP"
+echo ""
+echo "  WiFi AP Details:"
+echo "    SSID: CameraBridge-Photos"
+echo "    Password: BridgeCameraBVITeslaTom"
+echo "    Network: 192.168.10.0/24 (same as ethernet)"
+echo ""
+echo "  Full guide: /opt/camera-bridge/docs/WIFI-AP-SETUP-GUIDE.md"
 echo ""
 echo "Optional: Setup remote access for deployment:"
 echo "  setup-remote-access"

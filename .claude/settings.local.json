@@ -10,7 +10,18 @@
       "Bash(bash:*)",
       "Read(//etc/systemd/system/**)",
       "Bash(iwgetid:*)",
-      "Bash(systemctl:*)"
+      "Bash(systemctl:*)",
+      "Bash(iwconfig:*)",
+      "Bash(ip addr:*)",
+      "Bash(git -C /opt/camera-bridge remote -v)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(apt list:*)",
+      "Bash(modprobe:*)",
+      "Bash(ip link:*)",
+      "Bash(lsmod:*)",
+      "Bash(rmmod:*)"
     ],
     "deny": [],
     "ask": []
