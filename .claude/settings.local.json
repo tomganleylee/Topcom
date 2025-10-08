@@ -21,7 +21,14 @@
       "Bash(modprobe:*)",
       "Bash(ip link:*)",
       "Bash(lsmod:*)",
-      "Bash(rmmod:*)"
+      "Bash(rmmod:*)",
+      "Read(//etc/dnsmasq.d/**)",
+      "Read(//usr/lib/modules/6.8.0-85-generic/kernel/drivers/net/wireless/**)",
+      "Read(//tmp/rtl88x2bu/**)",
+      "Bash(lsusb:*)",
+      "Read(//tmp/8812au-20210820/**)",
+      "Read(//etc/systemd/network/**)",
+      "Read(//sys/class/net/**)"
     ],
     "deny": [],
     "ask": []

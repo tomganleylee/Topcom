@@ -23,9 +23,17 @@
       "priority": 10,
       "last_connected": "2025-10-01T09:52:36Z",
       "auto_connect": true
+    },
+    {
+      "ssid": "Guest",
+      "psk_hash": "71c16bcc29fb9d186cb549674acb2180533635ce5d2a9fcc620cd1c5388f87a3",
+      "password_saved": true,
+      "priority": 10,
+      "last_connected": "2025-10-07T20:59:24Z",
+      "auto_connect": true
     }
   ],
   "version": "1.0",
   "auto_connect": true,
-  "last_updated": "2025-10-01T09:52:36Z"
+  "last_updated": "2025-10-07T20:59:24Z"
 }
