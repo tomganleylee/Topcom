@@ -1,0 +1,18 @@
+[Unit]
+Description=Dropbox Token Refresh for Camera Bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/opt/camera-bridge/scripts/dropbox-token-manager.sh auto
+StandardOutput=append:/var/log/camera-bridge/token-refresh.log
+StandardError=append:/var/log/camera-bridge/token-refresh.log
+
+# Restart on failure
+Restart=on-failure
+RestartSec=5m
+
+[Install]
+WantedBy=multi-user.target

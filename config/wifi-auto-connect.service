@@ -1,0 +1,23 @@
+[Unit]
+Description=Camera Bridge WiFi Auto-Connect Service
+After=network.target NetworkManager.service wpa_supplicant.service
+Wants=network.target
+
+[Service]
+Type=simple
+ExecStart=/opt/camera-bridge/scripts/wifi-auto-connect.sh
+Restart=always
+RestartSec=10
+User=root
+StandardOutput=journal
+StandardError=journal
+
+# Environment
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Security settings
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

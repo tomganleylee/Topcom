@@ -1,0 +1,19 @@
+[Unit]
+Description=Dropbox Token Refresh Timer
+Requires=dropbox-token-refresh.service
+
+[Timer]
+# Run 30 minutes after boot
+OnBootSec=30min
+
+# Then run every 3 hours
+OnUnitActiveSec=3h
+
+# Also run if the system was powered down when it should have run
+Persistent=true
+
+# Randomize by up to 5 minutes to prevent thundering herd
+RandomizedDelaySec=5m
+
+[Install]
+WantedBy=timers.target

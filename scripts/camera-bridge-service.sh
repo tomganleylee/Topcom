@@ -1,0 +1,344 @@
+#!/bin/bash
+
+# Camera Bridge Service Script
+# Monitors SMB share for new photos and syncs them to Dropbox
+
+LOG_FILE="/var/log/camera-bridge/service.log"
+SMB_SHARE="/srv/samba/camera-share"
+DROPBOX_DEST="dropbox:Camera-Photos"
+PID_FILE="/var/run/camera-bridge.pid"
+
+log_message() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S'): $1" | tee -a "$LOG_FILE"
+}
+
+# Check if running as root
+check_root() {
+    if [ "$EUID" -ne 0 ]; then
+        log_message "ERROR: This service must be run as root"
+        exit 1
+    fi
+}
+
+# Sync specific file to Dropbox
+sync_to_dropbox() {
+    local file="$1"
+    local filename=$(basename "$file")
+    local relative_path="${file#$SMB_SHARE/}"
+
+    # Skip .recycle directory files
+    if [[ "$relative_path" == .recycle/* ]]; then
+        log_message "Skipping recycle bin file: $relative_path"
+        return 0
+    fi
+
+    # Skip hidden files
+    if [[ "$filename" == .* ]]; then
+        log_message "Skipping hidden file: $filename"
+        return 0
+    fi
+
+    log_message "Syncing: $relative_path"
+
+    # Use rclone copy with retry
+    if sudo -u camerabridge rclone copy "$file" "$DROPBOX_DEST" \
+        --retries 3 \
+        --retries-sleep 5s \
+        --low-level-retries 10 \
+        --no-traverse \
+        --log-level ERROR 2>&1 | tee -a "$LOG_FILE"; then
+
+        log_message "SUCCESS: Synced $filename to Dropbox"
+        return 0
+    else
+        log_message "ERROR: Failed to sync $filename"
+        return 1
+    fi
+}
+
+# Periodic sync function
+periodic_sync() {
+    while true; do
+        sleep 3600  # Every hour
+
+        log_message "Running periodic sync check..."
+
+        # Test connection
+        if sudo -u camerabridge rclone lsd dropbox: >/dev/null 2>&1; then
+            # Sync any unsynced files, excluding .recycle
+            find "$SMB_SHARE" -type f \
+                \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" \
+                   -o -iname "*.raw" -o -iname "*.dng" -o -iname "*.cr2" \
+                   -o -iname "*.nef" \) \
+                -not -path "*/\.recycle/*" \
+                -not -path "*/\.*" \
+                -mmin -60 2>/dev/null | while read -r file; do
+
+                local filename=$(basename "$file")
+                # Check if file exists in Dropbox
+                if ! sudo -u camerabridge rclone ls "$DROPBOX_DEST/$filename" >/dev/null 2>&1; then
+                    log_message "Periodic sync: Found unsynced file: $filename"
+                    sync_to_dropbox "$file"
+                fi
+            done
+        else
+            log_message "WARNING: Periodic sync skipped - no Dropbox connection"
+        fi
+    done
+}
+
+# Monitor SMB share for new files
+monitor_files() {
+    log_message "Starting file monitor for $SMB_SHARE"
+
+    # Ensure directory exists
+    if [ ! -d "$SMB_SHARE" ]; then
+        log_message "ERROR: SMB share directory does not exist: $SMB_SHARE"
+        return 1
+    fi
+
+    inotifywait -m -r -e create,moved_to "$SMB_SHARE" --format '%w%f %e' 2>/dev/null |
+    while read file event; do
+        # Only process image files
+        if [[ "$file" =~ \.(jpg|jpeg|png|tiff|raw|dng|cr2|nef|orf|arw|JPG|JPEG|PNG|TIFF|RAW|DNG|CR2|NEF|ORF|ARW)$ ]]; then
+            log_message "New file detected: $file (event: $event)"
+
+            # Wait a moment for file to be fully written
+            sleep 3
+
+            # Verify file is complete by checking if it's still being written to
+            if ! lsof "$file" >/dev/null 2>&1; then
+                # Sync to Dropbox if connected
+                if check_internet; then
+                    sync_to_dropbox "$file"
+                else
+                    log_message "No internet connection, file queued for later sync: $file"
+                    # Add to queue file for later processing
+                    echo "$file" >> "/tmp/camera-bridge-queue"
+                fi
+            else
+                log_message "File still being written, will retry: $file"
+                # Re-queue the file for processing
+                sleep 5
+                echo "$file" >> "/tmp/camera-bridge-retry"
+            fi
+        else
+            log_message "Ignoring non-image file: $file"
+        fi
+    done
+}
+
+# Check internet connectivity
+check_internet() {
+    # Try multiple DNS servers
+    for dns in 8.8.8.8 1.1.1.1 208.67.222.222; do
+        if ping -c 1 -W 5 "$dns" >/dev/null 2>&1; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Check if Dropbox is configured
+check_dropbox_config() {
+    if [ -f "/home/camerabridge/.config/rclone/rclone.conf" ] && grep -q "\[dropbox\]" /home/camerabridge/.config/rclone/rclone.conf; then
+        return 0
+    else
+        log_message "WARNING: Dropbox not configured"
+        return 1
+    fi
+}
+
+# Test Dropbox connection
+test_dropbox() {
+    if check_dropbox_config; then
+        sudo -u camerabridge rclone lsd dropbox: >/dev/null 2>&1
+        return $?
+    else
+        return 1
+    fi
+}
+
+# Process queued files
+process_queue() {
+    local queue_file="/tmp/camera-bridge-queue"
+
+    if [ -f "$queue_file" ] && [ -s "$queue_file" ]; then
+        log_message "Processing queued files..."
+
+        while IFS= read -r file; do
+            if [ -f "$file" ]; then
+                sync_to_dropbox "$file"
+            fi
+        done < "$queue_file"
+
+        # Clear the queue
+        > "$queue_file"
+    fi
+}
+
+# Process retry queue
+process_retry_queue() {
+    local retry_file="/tmp/camera-bridge-retry"
+
+    if [ -f "$retry_file" ] && [ -s "$retry_file" ]; then
+        log_message "Processing retry queue..."
+
+        local temp_file="/tmp/camera-bridge-retry.processing"
+        mv "$retry_file" "$temp_file" 2>/dev/null || return
+
+        while IFS= read -r file; do
+            if [ -f "$file" ]; then
+                # Check if file is still being written to
+                if ! lsof "$file" >/dev/null 2>&1; then
+                    sync_to_dropbox "$file"
+                else
+                    log_message "File still being written, re-queuing: $file"
+                    echo "$file" >> "$retry_file"
+                fi
+            fi
+        done < "$temp_file"
+
+        rm -f "$temp_file"
+    fi
+}
+
+# Periodic full sync
+
+# Cleanup function
+cleanup() {
+    log_message "Cleaning up camera bridge service"
+
+    # Kill background processes
+    pkill -P $$ 2>/dev/null || true
+
+    # Remove PID file
+    rm -f "$PID_FILE"
+
+    log_message "Camera Bridge Service stopped"
+    exit 0
+}
+
+# Signal handlers
+trap cleanup SIGTERM SIGINT
+
+start_service() {
+    check_root
+
+    # Check if already running
+    if [ -f "$PID_FILE" ] && kill -0 "$(cat $PID_FILE)" 2>/dev/null; then
+        log_message "Camera Bridge Service is already running (PID: $(cat $PID_FILE))"
+        exit 1
+    fi
+
+    # Create PID file
+    echo $$ > "$PID_FILE"
+
+    log_message "Camera Bridge Service starting (PID: $$)"
+
+    # Ensure log directory exists
+    mkdir -p "$(dirname $LOG_FILE)"
+    chown camerabridge:camerabridge "$(dirname $LOG_FILE)"
+
+    # Test Dropbox connection
+    if check_dropbox_config; then
+        if test_dropbox; then
+            log_message "Dropbox connection: OK"
+        else
+            log_message "WARNING: Dropbox connection failed"
+        fi
+    else
+        log_message "WARNING: Dropbox not configured"
+    fi
+
+    # Start background processes
+    monitor_files &
+    MONITOR_PID=$!
+
+    periodic_sync &
+    SYNC_PID=$!
+
+    log_message "File monitor started (PID: $MONITOR_PID)"
+    log_message "Periodic sync started (PID: $SYNC_PID)"
+
+    # Wait for background processes
+    wait
+}
+
+stop_service() {
+    log_message "Camera Bridge Service stopping"
+
+    if [ -f "$PID_FILE" ]; then
+        local pid=$(cat "$PID_FILE")
+        if kill -0 "$pid" 2>/dev/null; then
+            kill "$pid"
+            # Wait for graceful shutdown
+            sleep 2
+            if kill -0 "$pid" 2>/dev/null; then
+                kill -9 "$pid" 2>/dev/null || true
+            fi
+        fi
+        rm -f "$PID_FILE"
+    fi
+
+    # Kill any remaining processes
+    pkill -f "inotifywait.*$SMB_SHARE" 2>/dev/null || true
+    pkill -f "camera-bridge.*periodic_sync" 2>/dev/null || true
+
+    log_message "Camera Bridge Service stopped"
+}
+
+status_service() {
+    if [ -f "$PID_FILE" ] && kill -0 "$(cat $PID_FILE)" 2>/dev/null; then
+        echo "Camera Bridge Service is running (PID: $(cat $PID_FILE))"
+        return 0
+    else
+        echo "Camera Bridge Service is not running"
+        return 1
+    fi
+}
+
+case "$1" in
+    start)
+        start_service
+        ;;
+    stop)
+        stop_service
+        ;;
+    restart)
+        stop_service
+        sleep 2
+        start_service
+        ;;
+    status)
+        status_service
+        ;;
+    test-dropbox)
+        if test_dropbox; then
+            echo "Dropbox connection: OK"
+            exit 0
+        else
+            echo "Dropbox connection: FAILED"
+            exit 1
+        fi
+        ;;
+    sync-now)
+        if check_internet && check_dropbox_config; then
+            log_message "Manual sync requested"
+            process_queue
+            process_retry_queue
+            sudo -u camerabridge rclone sync "$SMB_SHARE" "$DROPBOX_DEST" \
+                --include "*.{jpg,jpeg,png,tiff,raw,dng,cr2,nef,orf,arw,JPG,JPEG,PNG,TIFF,RAW,DNG,CR2,NEF,ORF,ARW}" \
+                --exclude ".*" \
+                --create-empty-src-dirs \
+                --progress
+        else
+            echo "Cannot sync: No internet or Dropbox not configured"
+            exit 1
+        fi
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|status|test-dropbox|sync-now}"
+        exit 1
+        ;;
+esac

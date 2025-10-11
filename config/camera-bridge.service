@@ -1,0 +1,51 @@
+[Unit]
+Description=Camera Bridge Service - Automatic Photo Sync
+Documentation=https://github.com/your-repo/camera-bridge
+After=network.target network-online.target
+Wants=network-online.target
+Requires=network.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=/opt/camera-bridge/scripts/camera-bridge-service.sh start
+ExecStop=/opt/camera-bridge/scripts/camera-bridge-service.sh stop
+ExecReload=/opt/camera-bridge/scripts/camera-bridge-service.sh restart
+PIDFile=/var/run/camera-bridge.pid
+
+# Restart policy
+Restart=always
+RestartSec=10
+StartLimitInterval=300
+StartLimitBurst=5
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Security settings
+NoNewPrivileges=false
+ProtectHome=false
+ProtectSystem=false
+
+# Environment
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=SMB_SHARE=/srv/samba/camera-share
+Environment=LOG_FILE=/var/log/camera-bridge/service.log
+
+# Standard output and error
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=camera-bridge
+
+# Working directory
+WorkingDirectory=/opt/camera-bridge
+
+# Timeout settings
+TimeoutStartSec=90
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
+Alias=camera-sync.service

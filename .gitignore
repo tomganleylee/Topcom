@@ -1,0 +1,16 @@
+# Backups
+backups/
+
+# Temporary files
+*.tmp
+*.log
+*.swp
+*~
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
