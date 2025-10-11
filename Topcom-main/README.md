@@ -19,7 +19,28 @@ A complete solution for automatically syncing camera photos to cloud storage via
 
 ## 🚀 Quick Start
 
-### Option 1: Standard Raspberry Pi Setup (RECOMMENDED FOR TESTING)
+> **📖 NEW: See [QUICK_START.md](../QUICK_START.md) for the simplest setup experience!**
+
+### Recommended: One-Command Interactive Setup
+
+```bash
+# Clone and run interactive setup
+git clone https://github.com/tomganleylee/Topcom.git /opt/camera-bridge
+cd /opt/camera-bridge
+sudo bash setup-new-machine.sh
+```
+
+The interactive script will:
+- ✓ Install camera bridge base system
+- Ask: Install WiFi hotspot? (optional)
+- Ask: Install scanner support? (optional)
+- Configure and enable all services
+
+**Takes 5 minutes instead of 30!**
+
+---
+
+### Option 1: Standard Raspberry Pi Setup (MANUAL)
 **Complete setup for Pi 4, Pi 3B+, or any Linux system:**
 
 ```bash
