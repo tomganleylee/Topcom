@@ -39,8 +39,9 @@ apt update
 apt install -y \
     sane \
     sane-utils \
-    libsane \
-    libsane-extras \
+    libsane-common \
+    libsane1 \
+    libusb-1.0-0 \
     simple-scan \
     imagemagick
 
@@ -67,9 +68,9 @@ log "Scanner directory created: $SCANNER_DIR"
 # ========================================
 log "Checking for Brother DS-640 driver..."
 
-DRIVER_URL="https://download.brother.com/welcome/dlf105200/brscan-skey-0.3.2-0.amd64.deb"
+DRIVER_URL="https://download.brother.com/welcome/dlf006893/brscan-skey-0.3.2-0.amd64.deb"
 DRIVER_DEB="brscan-skey-0.3.2-0.amd64.deb"
-DRIVER_LIB_URL="https://download.brother.com/welcome/dlf006652/brscan4-0.4.11-1.amd64.deb"
+DRIVER_LIB_URL="https://download.brother.com/welcome/dlf105200/brscan4-0.4.11-1.amd64.deb"
 DRIVER_LIB="brscan4-0.4.11-1.amd64.deb"
 
 cd /tmp
