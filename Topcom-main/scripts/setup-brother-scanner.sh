@@ -45,8 +45,8 @@ apt install -y \
     simple-scan \
     imagemagick
 
-# Create scanner directory
-SCANNER_DIR="/srv/scanner/scans"
+# Create scanner directory inside camera-share so it auto-syncs
+SCANNER_DIR="/srv/samba/camera-share/scans"
 mkdir -p "$SCANNER_DIR"
 
 # Set permissions - scanner group and camerabridge user
@@ -127,8 +127,9 @@ cat > /usr/local/bin/brother-scan-to-dropbox << 'SCANEOF'
 
 # Brother Scanner to Dropbox Script
 # Called when scan button is pressed
+# Saves to camera-share/scans so it auto-syncs via camera-bridge
 
-SCAN_DIR="/srv/scanner/scans"
+SCAN_DIR="/srv/samba/camera-share/scans"
 TIMESTAMP=$(date '+%Y%m%d_%H%M%S')
 FILENAME="scan_${TIMESTAMP}"
 
@@ -144,8 +145,9 @@ scanimage --device-name="brother4:net1;dev0" \
 
 if [ $? -eq 0 ]; then
     chmod 664 "$SCAN_DIR/${FILENAME}.jpg"
+    chown camerabridge:scanner "$SCAN_DIR/${FILENAME}.jpg"
     echo "Scan saved: ${FILENAME}.jpg"
-    logger -t brother-scanner "Scan completed: ${FILENAME}.jpg"
+    logger -t brother-scanner "Scan completed: ${FILENAME}.jpg - will auto-sync to Dropbox"
 else
     echo "Scan failed"
     logger -t brother-scanner "Scan failed"
@@ -155,46 +157,10 @@ SCANEOF
 chmod +x /usr/local/bin/brother-scan-to-dropbox
 
 # ========================================
-# STEP 5: Add Scanner Share to SMB
+# STEP 5: Scanner shares via existing camera-share
 # ========================================
-log "Adding scanner share to Samba configuration..."
-
-# Check if scanner share already exists
-if ! grep -q "\[scanner\]" /etc/samba/smb.conf; then
-    cat >> /etc/samba/smb.conf << 'EOF'
-
-[scanner]
-   comment = Brother Scanner Output
-   path = /srv/scanner/scans
-   browseable = yes
-   guest ok = no
-   read only = no
-   create mask = 0664
-   directory mask = 0775
-   valid users = camera, camerabridge
-   write list = camera, camerabridge
-   force user = camerabridge
-   force group = scanner
-
-   # Performance for scanned documents
-   strict allocate = yes
-   allocation roundup size = 1048576
-
-   # Prevent file locks
-   locking = no
-   strict locking = no
-   oplocks = no
-   level2 oplocks = no
-
-   # File naming
-   preserve case = yes
-   short preserve case = yes
-   case sensitive = no
-EOF
-
-    systemctl restart smbd
-    log "Scanner SMB share added"
-fi
+log "Scanner will save to camera-share/scans/ subdirectory"
+log "Scans will automatically sync to Dropbox via camera-bridge service"
 
 # ========================================
 # FINAL STATUS
@@ -205,16 +171,19 @@ echo "Brother DS-640 Scanner Setup Complete"
 echo "======================================"
 echo ""
 echo "Scanner Directory: $SCANNER_DIR"
-echo "SMB Share: \\\\[server-ip]\\scanner"
+echo "SMB Share: \\\\[server-ip]\\camera-share\\scans"
 echo ""
 echo "Setup Instructions:"
 echo "1. Connect Brother DS-640 via USB"
 echo "2. Verify detection: lsusb | grep Brother"
 echo "3. Configure scanner: sudo brsaneconfig4 -a name=DS640 model=DS-640"
 echo "4. Test scan: scanimage --test"
-echo "5. Scans will auto-sync to Dropbox via camera-bridge service"
+echo "5. Test actual scan: scanimage --format=jpeg > /tmp/test-scan.jpg"
 echo ""
-echo "The camera-bridge service will automatically monitor"
-echo "$SCANNER_DIR and sync scanned documents to Dropbox."
+echo "How it works:"
+echo "- Scans are saved to: $SCANNER_DIR"
+echo "- This is inside camera-share, so camera-bridge monitors it automatically"
+echo "- New scans will auto-sync to Dropbox within seconds"
+echo "- Access scans via SMB: \\\\[server-ip]\\camera-share\\scans"
 echo ""
 echo "======================================"
