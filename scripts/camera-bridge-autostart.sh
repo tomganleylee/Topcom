@@ -172,15 +172,17 @@ handle_startup_input() {
 launch_terminal_ui() {
     local ui_path=""
 
-    # Find the appropriate UI script
-    if [ -f "/usr/local/bin/terminal-ui-enhanced" ]; then
-        ui_path="/usr/local/bin/terminal-ui-enhanced"
-    elif [ -f "/usr/local/bin/camera-bridge-ui" ]; then
+    # Find the appropriate UI script (prefer full-featured terminal-ui.sh)
+    if [ -f "/usr/local/bin/camera-bridge-ui" ]; then
         ui_path="/usr/local/bin/camera-bridge-ui"
-    elif [ -f "/opt/camera-bridge/scripts/terminal-ui-enhanced.sh" ]; then
-        ui_path="/opt/camera-bridge/scripts/terminal-ui-enhanced.sh"
+    elif [ -f "/usr/local/bin/terminal-ui" ]; then
+        ui_path="/usr/local/bin/terminal-ui"
     elif [ -f "/opt/camera-bridge/scripts/terminal-ui.sh" ]; then
         ui_path="/opt/camera-bridge/scripts/terminal-ui.sh"
+    elif [ -f "/usr/local/bin/terminal-ui-enhanced" ]; then
+        ui_path="/usr/local/bin/terminal-ui-enhanced"
+    elif [ -f "/opt/camera-bridge/scripts/terminal-ui-enhanced.sh" ]; then
+        ui_path="/opt/camera-bridge/scripts/terminal-ui-enhanced.sh"
     else
         echo "ERROR: Camera Bridge UI not found!"
         echo "Available options:"
