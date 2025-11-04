@@ -19,34 +19,48 @@ A complete solution for automatically syncing camera photos to cloud storage via
 
 ## 🚀 Quick Start
 
-### Unified Installation (RECOMMENDED)
-**One command for fresh install OR update - works on all platforms:**
+> **📖 NEW: See [QUICK_START.md](../QUICK_START.md) for the simplest setup experience!**
+
+### Recommended: One-Command Interactive Setup
+
+```bash
+# Clone and run interactive setup
+git clone https://github.com/tomganleylee/Topcom.git /opt/camera-bridge
+cd /opt/camera-bridge
+sudo bash setup-new-machine.sh
+```
+
+The interactive script will:
+- ✓ Install camera bridge base system
+- Ask: Install WiFi hotspot? (optional)
+- Ask: Install scanner support? (optional)
+- Configure and enable all services
+
+**Takes 5 minutes instead of 30!**
+
+---
+
+### Option 1: Standard Raspberry Pi Setup (MANUAL)
+**Complete setup for Pi 4, Pi 3B+, or any Linux system:**
 
 ```bash
 # 1. Clone repository
-git clone https://github.com/tomganleylee/Topcom.git camera-bridge
+git clone https://github.com/tomganleylee/Topcon.git camera-bridge
 cd camera-bridge
 
-# 2. Run the installer (handles both fresh install and updates)
-sudo ./install.sh
+# 2. Install Camera Bridge
+sudo ./scripts/install-packages.sh
 
-# 3. Configure Dropbox via web interface
-# Open browser: http://192.168.10.1
-# → Follow setup wizard to connect Dropbox
+# 3. Setup remote access (IMPORTANT for deployment)
+setup-remote-access
 
-# Done! Connect your camera/scanner to ethernet and start syncing!
-```
+# 4. Configure via terminal UI
+sudo /opt/camera-bridge/scripts/terminal-ui.sh
+# → WiFi Status & Management
+# → Dropbox Configuration (use QR code option!)
 
-**Updating an existing installation:**
-```bash
-cd camera-bridge
-git pull
-sudo ./install.sh  # Safely updates while preserving your configs
-```
-
-**Skip scanner support:**
-```bash
-sudo INSTALL_SCANNER=false ./install.sh
+# 5. Test web interface
+# Open browser: http://[pi-ip-address]/
 ```
 
 ### Option 2: Pi Zero 2 W USB Gadget Mode (ADVANCED)
@@ -65,17 +79,21 @@ See [pi-zero-2w/QUICK-START.md](raspberry-pi/pi-zero-2w/QUICK-START.md)
 3. Run: `sudo ./quick-setup.sh`
 4. System reboots automatically when complete
 
-### Option 4: Legacy Installation Scripts
-> **Note:** The unified `install.sh` replaces these older scripts, but they're still available:
-
+### Option 3: Manual Installation
 ```bash
-# Legacy options (still work, but install.sh is recommended)
-sudo ./scripts/install-packages.sh        # Old package installer
-sudo ./scripts/install-complete.sh        # Old complete installer
-sudo ./setup-ethernet-dhcp.sh             # Old DHCP setup
+# Clone and setup
+git clone <repository-url> camera-bridge
+cd camera-bridge
+
+# For Ubuntu/Debian
+sudo ./scripts/install-packages.sh
+
+# For Raspberry Pi
+sudo ./raspberry-pi/scripts/install-rpi.sh
+sudo ./raspberry-pi/scripts/setup-rpi.sh
 ```
 
-### Option 5: Step-by-Step
+### Option 4: Step-by-Step
 See [INSTALLATION.md](docs/INSTALLATION.md) for detailed instructions.
 
 ## 📋 Requirements
@@ -93,31 +111,6 @@ See [INSTALLATION.md](docs/INSTALLATION.md) for detailed instructions.
 - Raspberry Pi OS (32-bit or 64-bit)
 - Internet connection for setup
 - Dropbox account (free tier works)
-
-## 🔒 Security Configuration
-
-**IMPORTANT:** After installation, immediately change these default credentials:
-
-1. **SMB Password** (highly recommended):
-   ```bash
-   sudo smbpasswd camera
-   # Enter your new secure password
-   ```
-
-2. **WiFi Hotspot Password** (if using WiFi AP mode):
-   ```bash
-   # Edit the hostapd configuration:
-   sudo nano /etc/hostapd/camera-bridge-ap.conf
-   # Change the wpa_passphrase line to your secure password
-   sudo systemctl restart hostapd
-   ```
-
-3. **System User Password** (recommended):
-   ```bash
-   sudo passwd camerabridge
-   ```
-
-The default credentials are documented in this repository for initial setup only. **Change them immediately** for security.
 
 ## 🎛️ Management Interfaces
 
