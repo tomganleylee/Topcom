@@ -385,6 +385,9 @@ if (isset($_POST['submit'])) {
         <div class="header">
             <h1>📷 Camera Bridge</h1>
             <p>Professional Photo Sync System</p>
+            <div style="margin-top: 15px; font-size: 1.1em; background: rgba(255,255,255,0.15); padding: 10px 20px; border-radius: 10px; display: inline-block;">
+                <strong>🌐 Access this device at:</strong> <?php echo $_SERVER['SERVER_ADDR']; ?>
+            </div>
         </div>
 
         <div class="progress-bar">
