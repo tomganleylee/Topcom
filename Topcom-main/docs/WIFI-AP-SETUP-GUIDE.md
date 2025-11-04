@@ -14,7 +14,7 @@ The WiFi Access Point has been configured in **bridge mode**, combining your USB
 
 ### WiFi Access Point
 - **SSID**: `CameraBridge-Photos`
-- **Password**: `BridgeCameraBVITeslaTom`
+- **Password**: `YourSecurePassword123!`
 - **Band**: 2.4GHz (Channel 6)
 - **Security**: WPA2-PSK
 - **Max Clients**: 10-20 (typical for USB adapters)
@@ -114,7 +114,7 @@ The main menu now displays:
    IP: 192.168.10.1
    WiFi AP: ✓ Active
    SSID: CameraBridge-Photos
-   Password: BridgeCameraBVITeslaTom
+   Password: YourSecurePassword123!
 📁 SMB Share: \\192.168.10.1\photos
    Username: camera
    Password: camera123
@@ -376,7 +376,7 @@ After plugging in USB WiFi:
 - [ ] USB WiFi interface detected (`ip link show`)
 - [ ] WiFi AP started successfully
 - [ ] SSID "CameraBridge-Photos" visible on phone/laptop
-- [ ] Can connect with password "BridgeCameraBVITeslaTom"
+- [ ] Can connect with password "YourSecurePassword123!"
 - [ ] Receive IP in 192.168.10.x range
 - [ ] Can ping 192.168.10.1
 - [ ] Can access SMB share \\192.168.10.1\photos
@@ -413,7 +413,7 @@ journalctl -u hostapd -f
 | Setting | Value |
 |---------|-------|
 | WiFi SSID | CameraBridge-Photos |
-| WiFi Password | BridgeCameraBVITeslaTom |
+| WiFi Password | YourSecurePassword123! |
 | IP Address | 192.168.10.1 |
 | DHCP Range | 192.168.10.10-50 |
 | SMB Share | \\192.168.10.1\photos |

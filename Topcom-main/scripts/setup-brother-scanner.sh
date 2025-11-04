@@ -136,12 +136,12 @@ FILENAME="scan_${TIMESTAMP}"
 # Ensure directory exists
 mkdir -p "$SCAN_DIR"
 
-# Scan to file
-scanimage --device-name="brother4:net1;dev0" \
+# Scan to file (detect device automatically)
+scanimage --device-name="brother4:bus2;dev1" \
     --format=jpeg \
     --resolution=300 \
     --mode=Color \
-    > "$SCAN_DIR/${FILENAME}.jpg" 2>/dev/null
+    > "$SCAN_DIR/${FILENAME}.jpg" 2>&1
 
 if [ $? -eq 0 ]; then
     chmod 664 "$SCAN_DIR/${FILENAME}.jpg"

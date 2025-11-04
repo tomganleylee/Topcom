@@ -1,39 +1,15 @@
 {
   "networks": [
     {
-      "ssid": "VM5469276",
-      "psk_hash": "ff6664e5c5a76a5eabc95934542aa50c47d303aa880f099f72330e64dcdb51a1",
+      "ssid": "YourHomeWiFi",
+      "psk_hash": "example_hash_will_be_generated_automatically",
       "password_saved": true,
       "priority": 10,
-      "last_connected": "2025-09-27T22:17:35.528780Z",
-      "auto_connect": true
-    },
-    {
-      "ssid": "Raptor_2G",
-      "psk_hash": "f1b3c74a7c1e1d5119872997c1d68bba9e4dffcb54672c8c35c61b984b5a347a",
-      "password_saved": true,
-      "priority": 10,
-      "last_connected": "2025-09-29T13:48:14Z",
-      "auto_connect": true
-    },
-    {
-      "ssid": "5GEE-WiFi-2MFP-2.4GHz",
-      "psk_hash": "8aa0ea296ee2c812bc5c3e6ebcefaa6675adee8d15784983430770de9478708a",
-      "password_saved": true,
-      "priority": 10,
-      "last_connected": "2025-10-01T09:52:36Z",
-      "auto_connect": true
-    },
-    {
-      "ssid": "Guest",
-      "psk_hash": "71c16bcc29fb9d186cb549674acb2180533635ce5d2a9fcc620cd1c5388f87a3",
-      "password_saved": true,
-      "priority": 10,
-      "last_connected": "2025-10-07T20:59:24Z",
+      "last_connected": "2025-01-01T00:00:00Z",
       "auto_connect": true
     }
   ],
   "version": "1.0",
   "auto_connect": true,
-  "last_updated": "2025-10-07T20:59:24Z"
+  "last_updated": "2025-01-01T00:00:00Z"
 }

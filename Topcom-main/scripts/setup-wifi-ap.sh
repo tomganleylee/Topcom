@@ -171,7 +171,7 @@ start_ap() {
     log ""
     log "Network Information:"
     log "  SSID: CameraBridge-Photos"
-    log "  Password: BridgeCameraBVITeslaTom"
+    log "  Password: YourSecurePassword123!"
     log "  Bridge IP: $BRIDGE_IP"
     log "  SMB Share: \\\\$BRIDGE_IP\\photos"
     log "  Username: camera"

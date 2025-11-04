@@ -2,7 +2,7 @@
 
 # Camera Bridge Monitor Service with Scanner Support
 SMB_SHARE="/srv/samba/camera-share"
-SCANNER_DIR="/srv/scanner/scans"
+SCANNER_DIR="/srv/samba/camera-share/scans"
 DROPBOX_PHOTOS="dropbox:Camera-Photos"
 DROPBOX_SCANS="dropbox:Scanned-Documents"
 LOG_FILE="/var/log/camera-bridge/monitor.log"

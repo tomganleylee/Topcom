@@ -190,6 +190,53 @@ Power On → Boot Splash → Auto-Login → Status Display → Terminal UI
 - **Terminal UI**: bash with dialog-style menus
 - **Boot Integration**: systemd services, getty auto-login
 
+## Network Interface Architecture
+
+### CRITICAL: Network Interface Rules
+
+**eno1 (Primary Ethernet Interface):**
+- **Purpose**: Primary interface for camera connectivity via ethernet cable
+- **IP Address**: 192.168.10.1/24 (static)
+- **DHCP Server**: ACTIVE - serves IPs 192.168.10.10-100
+- **Required**: This interface MUST work at all times, regardless of WiFi status
+- **Connected Devices**: Cameras, scanners, or other ethernet devices
+- **Configuration**: `/etc/dnsmasq.d/camera-bridge.conf`
+
+**wlan0 (External USB WiFi Adapter - OPTIONAL):**
+- **Purpose**: WiFi hotspot for camera WiFi connectivity
+- **Hardware**: RTL8812AU based USB WiFi adapter
+- **IP Address**: 192.168.50.1/24 (when active)
+- **DHCP Server**: SHOULD BE ACTIVE when USB adapter is plugged in - serves IPs 192.168.50.10-100
+- **Optional**: System operates fully without this interface
+- **SSID**: CameraBridge-Setup
+- **Configuration**: Will need separate dnsmasq config file
+- **Driver Location**: `/usr/src/rtl8812au-5.13.6-23`
+
+**wlp1s0 (Internal Laptop WiFi - DO NOT USE):**
+- **Purpose**: Internal laptop WiFi for external connectivity ONLY
+- **NEVER use this interface for**:
+  - DHCP server
+  - WiFi hotspot (hostapd)
+  - Camera connectivity
+- **Reserved for**: Connecting to other networks, internet access
+- **Critical Rule**: DO NOT configure hostapd or dnsmasq on this interface
+
+### Dual DHCP Server Architecture
+
+The system supports **two independent DHCP servers** running simultaneously:
+
+1. **Ethernet DHCP** (eno1): 192.168.10.x network
+2. **WiFi Hotspot DHCP** (wlan0): 192.168.50.x network
+
+Both networks can access the Samba share at `/srv/samba/camera-share`
+
+### Network Design Principles
+
+1. **Ethernet-first design**: The system MUST operate fully on ethernet (eno1) even if USB WiFi adapter is not connected
+2. **WiFi hotspot is optional**: USB WiFi provides convenience but is NOT required for core functionality
+3. **Service resilience**: dnsmasq and hostapd must handle missing interfaces gracefully (no failures on boot)
+4. **Never use internal WiFi**: wlp1s0 is off-limits for camera bridge operations
+
 ## Configuration Notes
 
 ### Important File Locations
