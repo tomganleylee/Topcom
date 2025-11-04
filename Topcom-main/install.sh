@@ -345,9 +345,14 @@ EOF
 fi
 
 # Test and restart SMB
-testparm -s /etc/samba/smb.conf > /dev/null 2>&1
-systemctl restart smbd
-systemctl enable smbd
+if testparm -s /etc/samba/smb.conf > /dev/null 2>&1; then
+    systemctl restart smbd || warn "SMB restart failed, but continuing installation"
+    systemctl enable smbd 2>/dev/null || true
+else
+    error "SMB configuration test failed"
+    exit 1
+fi
+
 systemctl stop nmbd 2>/dev/null || true
 systemctl disable nmbd 2>/dev/null || true
 log "SMB configured and restarted"
@@ -404,8 +409,15 @@ server {
 EOF
 
 ln -sf /etc/nginx/sites-available/camera-bridge /etc/nginx/sites-enabled/default
-systemctl restart nginx
-systemctl enable nginx
+
+# Test nginx config before restarting
+if nginx -t 2>/dev/null; then
+    systemctl restart nginx || warn "Nginx restart failed, but continuing installation"
+else
+    warn "Nginx configuration test failed, skipping restart"
+fi
+
+systemctl enable nginx 2>/dev/null || true
 log "Web interface configured"
 
 echo ""
@@ -457,9 +469,15 @@ dhcp-option=6,8.8.8.8,8.8.4.4
 log-dhcp
 EOF
 
-systemctl restart dnsmasq
-systemctl enable dnsmasq
-log "DHCP server configured and started"
+# Test and restart dnsmasq
+if systemctl restart dnsmasq; then
+    log "DHCP server configured and started"
+else
+    warn "dnsmasq failed to start - may need manual intervention"
+    warn "Check: journalctl -u dnsmasq -n 20"
+fi
+
+systemctl enable dnsmasq 2>/dev/null || true
 
 echo ""
 
