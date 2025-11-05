@@ -42,7 +42,18 @@
   - Ethernet Bridge configuration
   - Real-time service status
 
+### Added - Dropbox Cleanup Automation
+- **Cleanup Script**: Automatically fixes misplaced files in Dropbox
+  - Script: `/opt/camera-bridge/scripts/cleanup-dropbox-folders.sh`
+  - Moves files from problematic subfolders (．/, etc.) to root
+  - Systemd timer runs hourly: `dropbox-cleanup.timer`
+  - Logs to: `/var/log/camera-bridge/cleanup.log`
+
 ### Fixed
+- **Dropbox Subfolder Issue**: Files in SMB share root no longer create "．/" subfolder
+  - Modified `sync_to_dropbox()` to detect root-level files
+  - Root files now sync directly to `Camera-Photos/` instead of `Camera-Photos/．/`
+  - Prevents PDFs and images from being hidden in Dropbox
 - Samba now listens on all configured interfaces (Ethernet + WiFi AP)
 - hostapd service configured correctly with Type=simple for reliable startup
 - PDF files now properly detected and synced to Dropbox
