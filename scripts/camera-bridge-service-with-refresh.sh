@@ -113,13 +113,22 @@ process_queue() {
 sync_to_dropbox() {
     local file="$1"
     local relative_path="${file#$SMB_SHARE/}"
-    local dest_dir="$DROPBOX_DEST/$(dirname "$relative_path")"
+    local subdir="$(dirname "$relative_path")"
+
+    # If dirname is "." (file in root), sync directly to DROPBOX_DEST
+    # Otherwise append the subdirectory
+    local dest_dir="$DROPBOX_DEST"
+    if [ "$subdir" != "." ]; then
+        dest_dir="$DROPBOX_DEST/$subdir"
+    fi
 
     log_message "INFO: Syncing $relative_path to Dropbox..."
 
-    # Create destination directory if needed
-    if ! sudo -u camerabridge rclone mkdir "$dest_dir" 2>/dev/null; then
-        log_message "WARN: Could not create directory $dest_dir"
+    # Create destination directory if needed (only if not root)
+    if [ "$subdir" != "." ]; then
+        if ! sudo -u camerabridge rclone mkdir "$dest_dir" 2>/dev/null; then
+            log_message "WARN: Could not create directory $dest_dir"
+        fi
     fi
 
     # Copy file to Dropbox
