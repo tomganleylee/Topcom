@@ -4,13 +4,15 @@ A complete solution for automatically syncing camera photos to cloud storage via
 
 ## 🎯 Features
 
-- **Automatic Photo Sync**: Real-time sync of photos from cameras to Dropbox
+- **Automatic Photo Sync**: Real-time sync of photos and PDFs from cameras to Dropbox
 - **QR Code Setup**: Mobile-friendly Dropbox token entry via QR code + web interface
-- **SMB Network Share**: Professional-grade file sharing for camera connectivity
+- **Dual Network Support**: Ethernet (192.168.10.x) + WiFi AP (192.168.50.x) for flexible connectivity
+- **WiFi Access Point**: USB WiFi dongle creates wireless hotspot for camera/device access
+- **SMB Network Share**: Professional-grade file sharing for camera connectivity (Windows XP+ compatible)
 - **USB Gadget Mode**: Pi Zero 2 W acts as smart USB drive for direct camera connection
 - **Smart Installation**: Auto-detecting installer that preserves configurations
 - **Web Interface**: Easy setup and monitoring via web browser
-- **Terminal Interface**: Advanced management and troubleshooting tools
+- **Terminal Interface**: Advanced management and troubleshooting tools with network status
 - **WiFi Management**: Flexible network configuration with hotspot fallback
 - **Dual Mode Operation**: Switch between network SMB and USB gadget modes
 - **Raspberry Pi Optimized**: Special optimizations for Pi deployment

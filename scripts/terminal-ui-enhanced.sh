@@ -533,6 +533,36 @@ main() {
     # Create log directory if needed
     sudo mkdir -p /var/log/camera-bridge 2>/dev/null || true
 
+    # Show connection info on startup
+    local eth_ip=$(ip -4 addr show eno1 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -1)
+    local wifi_ip=$(ip -4 addr show wlx24ec99bfe35b 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -1)
+    local client_ip=$(ip -4 addr show wlp1s0 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -1)
+    local hotspot_status="inactive"
+    if systemctl is-active --quiet hostapd 2>/dev/null; then
+        hotspot_status="active"
+    fi
+
+    local startup_info="Camera Bridge - Network Information
+==========================================
+
+Ethernet Bridge (Cameras):
+• IP Address: ${eth_ip:-Not configured}
+• Network: 192.168.10.0/24
+
+WiFi Access Point:
+• Status: $hotspot_status
+• SSID: CameraBridge-Setup
+• Password: camera123
+• IP Address: ${wifi_ip:-Not configured}
+• Network: 192.168.50.0/24
+
+Client WiFi (Internet):
+• IP Address: ${client_ip:-Not connected}
+
+Press any key to continue to main menu..."
+
+    dialog --title "Network Status" --msgbox "$startup_info" 20 70
+
     clear
     show_main_menu
 }
@@ -1401,7 +1431,41 @@ view_logs() { dialog --title "View Logs" --msgbox "Log viewing functionality" 8 
 network_settings() { dialog --title "Network Settings" --msgbox "Network settings functionality" 8 40; }
 service_management() { dialog --title "Service Management" --msgbox "Service management functionality" 8 40; }
 file_management() { dialog --title "File Management" --msgbox "File management functionality" 8 40; }
-system_info() { dialog --title "System Info" --msgbox "System information functionality" 8 40; }
+system_info() {
+    local sys_info="SYSTEM INFORMATION
+==================
+
+Hardware:
+• CPU: $(lscpu | grep 'Model name' | awk -F: '{print $2}' | xargs 2>/dev/null || echo 'Unknown')
+• Memory: $(lsmem | grep 'Total online memory' | awk '{print $4}' 2>/dev/null || free -h | grep 'Mem:' | awk '{print $2}')
+• Storage: $(lsblk | grep disk | awk '{print $4}' | head -1 2>/dev/null || echo 'Unknown')
+
+Network Interfaces:
+$(ip link show | grep -E '^[0-9]+:' | awk -F: '{print "• " $2}' | sed 's/^ *//' | head -5)
+
+WiFi Access Point:
+• SSID: CameraBridge-Setup
+• Password: camera123
+• Network: 192.168.50.0/24
+• Status: $(systemctl is-active hostapd 2>/dev/null || echo 'inactive')
+
+Ethernet Bridge:
+• Network: 192.168.10.0/24
+• Interface: eno1
+• DHCP Range: 192.168.10.10-100
+
+Operating System:
+• $(lsb_release -d 2>/dev/null | awk -F: '{print $2}' | xargs || echo 'Linux')
+• Kernel: $(uname -r)
+• Architecture: $(uname -m)
+
+Camera Bridge:
+• Version: 1.1
+• Install Path: /opt/camera-bridge
+• Mode: $(get_operation_mode)"
+
+    dialog --title "System Information" --msgbox "$sys_info" 24 75
+}
 maintenance_menu() { dialog --title "Maintenance" --msgbox "Maintenance tools functionality" 8 40; }
 setup_wizard() { dialog --title "Setup Wizard" --msgbox "Quick setup wizard functionality" 8 40; }
 help_about() { dialog --title "Help & About" --msgbox "Help and about functionality" 8 40; }

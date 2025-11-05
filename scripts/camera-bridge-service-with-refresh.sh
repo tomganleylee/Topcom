@@ -157,8 +157,8 @@ monitor_files() {
     # Main monitoring loop
     inotifywait -m -r -e create,moved_to "$SMB_SHARE" --format '%w%f %e' 2>/dev/null |
     while read file event; do
-        # Only process image files
-        if [[ "$file" =~ \.(jpg|jpeg|png|tiff|raw|dng|cr2|nef|orf|arw|JPG|JPEG|PNG|TIFF|RAW|DNG|CR2|NEF|ORF|ARW)$ ]]; then
+        # Only process image and PDF files
+        if [[ "$file" =~ \.(jpg|jpeg|png|tiff|raw|dng|cr2|nef|orf|arw|pdf|JPG|JPEG|PNG|TIFF|RAW|DNG|CR2|NEF|ORF|ARW|PDF)$ ]]; then
             log_message "New file detected: $file (event: $event)"
 
             # Wait for file to be fully written
